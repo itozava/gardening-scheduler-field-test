@@ -1,6 +1,6 @@
 {
   "name": "Gardening Scheduler",
-  "short_name": "Gardening",
+  "short_name": "Gardening APP",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ecfdf5",
