@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["garden-icon-192.png", "garden-icon-512.png"],
       manifest: {
-        name: "Gardening Scheduler",
-        short_name: "Gardening",
+        name: "Exton Landscapes",
+        short_name: "Exton",
         description: "Gardening job scheduler and field work tracker",
         theme_color: "#047857",
         background_color: "#ecfdf5",
