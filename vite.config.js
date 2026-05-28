@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["icon-192.png", "icon-512.png"],
+      includeAssets: ["garden-icon-192.png", "garden-icon-512.png"],
       manifest: {
         name: "Gardening Scheduler",
         short_name: "Gardening",
@@ -20,12 +20,12 @@ export default defineConfig({
         scope: "/",
         icons: [
           {
-            src: "/icon-192.png",
+            src: "/garden-icon-192.png",
             sizes: "192x192",
             type: "image/png"
           },
           {
-            src: "/icon-512.png",
+            src: "/garden-icon-512.png",
             sizes: "512x512",
             type: "image/png"
           }
