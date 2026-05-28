@@ -20,11 +20,6 @@ import {
 import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js");
-  });
-}
 
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
