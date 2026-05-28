@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -484,6 +484,45 @@ function getReminderPreview(client) {
 function InnerApp() {
   const [clients, setClients] = useState([]);
   const [selectedClientId, setSelectedClientId] = useState(1);
+  async function loadClientsFromSheets() {
+  try {
+    const response = await fetch(GOOGLE_SCRIPT_WEBAPP_URL);
+    const sheetClients = await response.json();
+
+    const convertedClients = sheetClients
+      .filter((row) => row["Client Name"] || row["Name"] || row["Client"])
+      .map((row, index) => ({
+        id: Date.now() + index,
+        name: row["Client Name"] || row["Name"] || row["Client"] || "",
+        sheetKey: row["Client Name"] || row["Name"] || row["Client"] || "",
+        invoiceName: row["Client Name (invoice)"] || row["Invoice Name"] || row["Client Name"] || "",
+        suburb: row["Suburb"] || "",
+        address: row["Address"] || "",
+        phone: row["Phone"] || "",
+        email: row["Email"] || "",
+        accessInfo: row["Access Info"] || row["Access"] || "",
+        scheduleDay: row["Schedule Day"] || "",
+        frequency: row["Frequency"] || "",
+        nextVisit: row["Next Visit"] || "",
+        activeNotes: [],
+        activeAlerts: [],
+        completedNotes: [],
+        visitHistory: [],
+        completedDates: [],
+        oneOffJobs: [],
+      }));
+
+    setClients(convertedClients);
+    if (convertedClients.length > 0) {
+      setSelectedClientId(convertedClients[0].id);
+    }
+  } catch (error) {
+    console.error("Failed to load clients from Sheets:", error);
+  }
+}
+useEffect(() => {
+  loadClientsFromSheets();
+}, []);
   const [activePage, setActivePage] = useState("schedule");
   const [search, setSearch] = useState("");
   const [newNote, setNewNote] = useState("");
