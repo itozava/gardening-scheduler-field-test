@@ -40,7 +40,7 @@ function toLocalIsoDate(date) {
 
 const today = getTodayIso();
 
-const GOOGLE_SCRIPT_WEBAPP_URL = "https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnTDYPS9G0ZkSJjtxbQtcSXJmSLlFo6GFbhz5kDDgqp3REZZEPPNelbGnBDV3ajuFV3yC_wUMHeo1ekn1I4JIEHVhvaVm9yEIR0FlR54nqRwYeTebjKLOnp0is5r1AxPrq70SLzKnJdzRHv8G7eH9AhWmo3OqwP4GVFVG6gL4ej95vJmndcVVVwZCzX3KD_dHsTrD6EoX_qBUxtqfg3aZCtZRLZdhFIsvP7jJFIzBJk0knHc19bXbnyQjvg8QCgOmQ_Ok5rqQX7PDkRO8D0S8E6GZqpDNg&lib=MvH3c5swwAGJ7VqIhBH4SW1tAoo_YXvNV";
+const GOOGLE_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxudXB_hFSKpiWBIz0xGWX9B_e3tfAG9_C55u8PPrMBEFKTYaNxqvWeX6b70xLNGLNLlw/exec";
 
 const addressSuggestions = [
   "New Farm, QLD",
