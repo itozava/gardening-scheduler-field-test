@@ -956,24 +956,24 @@ function InnerApp() {
     setActivePage("details");
   }
 
-  async function submitClientToSheets(clientData, mode = "create") {
-    try {
-      return await submitVisitToSheets({
-        action: "saveClient",
-        mode,
-        originalNickname: clientData.sheetKey || clientData.name || "",
-        nickname: clientData.name || "",
-        invoiceName: clientData.invoiceName || clientData.name || "",
-        address: clientData.address || "",
-        phone: clientData.phone || "",
-        email: clientData.email || "",
-        notes: clientData.accessInfo || "",
-      });
-    } catch (error) {
-      console.error("Could not send client to Sheets:", error);
-      return false;
-    }
+ async function submitClientToSheets(clientData, mode = "create") {
+  try {
+    return submitVisitToSheetsFallback({
+      action: "saveClient",
+      mode,
+      originalNickname: clientData.sheetKey || clientData.name || "",
+      nickname: clientData.name || "",
+      invoiceName: clientData.invoiceName || clientData.name || "",
+      address: clientData.address || "",
+      phone: clientData.phone || "",
+      email: clientData.email || "",
+      notes: clientData.accessInfo || "",
+    });
+  } catch (error) {
+    console.error("Could not send client to Sheets:", error);
+    return false;
   }
+}
 
   async function saveEditedClientToSheets() {
     if (!selectedClient) return;
