@@ -482,6 +482,41 @@ function getReminderPreview(client) {
 }
 
 const CLIENTS_STORAGE_KEY = "exton_scheduler_clients_v2";
+const APP_SETTINGS_STORAGE_KEY = "exton_scheduler_app_settings_v1";
+
+function normaliseImageUrl(url) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+  const idFromUc = value.match(/[?&]id=([^&]+)/);
+  if (value.includes("drive.google.com/uc") && idFromUc?.[1]) {
+    return `https://drive.google.com/thumbnail?id=${idFromUc[1]}&sz=w1600`;
+  }
+  const idFromFile = value.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (idFromFile?.[1]) {
+    return `https://drive.google.com/thumbnail?id=${idFromFile[1]}&sz=w1600`;
+  }
+  return value;
+}
+
+function getInitialAppSettings() {
+  try {
+    const saved = window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (error) {
+    console.warn("Could not load app settings locally:", error);
+  }
+  return {};
+}
+
+function saveAppSettingsLocally(settings) {
+  try {
+    const current = getInitialAppSettings();
+    const next = { ...current, ...settings };
+    window.localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    console.warn("Could not save app settings locally:", error);
+  }
+}
 
 function generateRecordId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -532,9 +567,14 @@ function settingsArrayToObject(settingsRows) {
 }
 
 function saveAppSettings(settings, logoData = "") {
+  const cleanedSettings = {
+    ...settings,
+    businessLogoUrl: normaliseImageUrl(settings?.businessLogoUrl || ""),
+  };
+  saveAppSettingsLocally(cleanedSettings);
   postToSheets({
     action: "saveAppSettings",
-    settings,
+    settings: cleanedSettings,
     logoData,
   });
 }
@@ -601,10 +641,10 @@ function buildClientsFromDatabase(data) {
       const recurring = recurringRows.find((job) => job.clientId === clientId && (job.status || "active") === "active");
       const activeNotes = notesRows
         .filter((note) => note.clientId === clientId && (note.status || "active") === "active")
-        .map((note) => ({ id: note.noteId, text: note.text || "", createdAt: note.createdAt || today, photo: note.photoUrl || null }));
+        .map((note) => ({ id: note.noteId, text: note.text || "", createdAt: note.createdAt || today, photo: normaliseImageUrl(note.photoUrl) || null }));
       const completedClientNotes = notesRows
         .filter((note) => note.clientId === clientId && note.status === "completed")
-        .map((note) => ({ id: note.noteId, text: note.text || "", completedAt: note.completedAt || note.createdAt || today, photo: note.photoUrl || null }));
+        .map((note) => ({ id: note.noteId, text: note.text || "", completedAt: note.completedAt || note.createdAt || today, photo: normaliseImageUrl(note.photoUrl) || null }));
       const activeAlerts = alertsRows
         .filter((alert) => alert.clientId === clientId && (alert.status || "active") === "active")
         .map((alert) => ({ id: alert.alertId, text: alert.text || "", alertDate: alert.alertDate || today, createdAt: alert.createdAt || today }));
@@ -677,11 +717,12 @@ function InnerApp() {
   const [editingAlertText, setEditingAlertText] = useState("");
   const [editingAlertDate, setEditingAlertDate] = useState(isoToDisplayDate(today));
   const [newPhoto, setNewPhoto] = useState(null);
-  const [businessName, setBusinessName] = useState("Your Business Name");
-  const [headerSubtitle, setHeaderSubtitle] = useState("Weekly Schedule");
-  const [businessLogo, setBusinessLogo] = useState("https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=300&q=80");
+  const initialAppSettings = getInitialAppSettings();
+  const [businessName, setBusinessName] = useState(initialAppSettings.businessName || "Your Business Name");
+  const [headerSubtitle, setHeaderSubtitle] = useState(initialAppSettings.headerSubtitle || "Weekly Schedule");
+  const [businessLogo, setBusinessLogo] = useState(normaliseImageUrl(initialAppSettings.businessLogoUrl) || "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=300&q=80");
   const [isEditingHeader, setIsEditingHeader] = useState(false);
-  const [colourScheme, setColourScheme] = useState("green");
+  const [colourScheme, setColourScheme] = useState(initialAppSettings.colourScheme || "green");
   const [visitSubmitStatus, setVisitSubmitStatus] = useState("idle");
   const [clientSubmitStatus, setClientSubmitStatus] = useState("idle");
   const [clientEditStatus, setClientEditStatus] = useState("idle");
@@ -712,8 +753,14 @@ function InnerApp() {
         if (loadedClients.length > 0) setSelectedClientId(loadedClients[0].id);
         if (appSettings.businessName) setBusinessName(appSettings.businessName);
         if (appSettings.headerSubtitle) setHeaderSubtitle(appSettings.headerSubtitle);
-        if (appSettings.businessLogoUrl) setBusinessLogo(appSettings.businessLogoUrl);
+        if (appSettings.businessLogoUrl) setBusinessLogo(normaliseImageUrl(appSettings.businessLogoUrl));
         if (appSettings.colourScheme && colourSchemes[appSettings.colourScheme]) setColourScheme(appSettings.colourScheme);
+        saveAppSettingsLocally({
+          businessName: appSettings.businessName || businessName,
+          headerSubtitle: appSettings.headerSubtitle || headerSubtitle,
+          businessLogoUrl: normaliseImageUrl(appSettings.businessLogoUrl) || businessLogo,
+          colourScheme: appSettings.colourScheme || colourScheme,
+        });
         setSyncStatus("synced");
       } catch (error) {
         console.error("Could not load data from Sheets:", error);
