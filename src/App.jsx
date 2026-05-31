@@ -521,6 +521,63 @@ function postToSheets(payload) {
   }
 }
 
+function settingsArrayToObject(settingsRows) {
+  const result = {};
+  if (!Array.isArray(settingsRows)) return result;
+  settingsRows.forEach((row) => {
+    if (!row?.settingKey) return;
+    result[String(row.settingKey)] = row.settingValue || "";
+  });
+  return result;
+}
+
+function saveAppSettings(settings, logoData = "") {
+  postToSheets({
+    action: "saveAppSettings",
+    settings,
+    logoData,
+  });
+}
+
+function compressImageFile(file, options = {}) {
+  const maxSize = options.maxSize || 1600;
+  const quality = options.quality || 0.75;
+
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      reject(new Error("No file selected."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read image file."));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Could not load image for compression."));
+      image.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(image, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function isDataImage(value) {
+  return typeof value === "string" && value.startsWith("data:image/");
+}
+
 async function fetchSheetsDatabase() {
   const url = `${GOOGLE_SCRIPT_WEBAPP_URL}?action=getDatabase&ts=${Date.now()}`;
   const response = await fetch(url, { method: "GET", cache: "no-store" });
@@ -650,8 +707,13 @@ function InnerApp() {
         const database = await fetchSheetsDatabase();
         if (cancelled) return;
         const loadedClients = buildClientsFromDatabase(database);
+        const appSettings = settingsArrayToObject(database?.appSettings);
         setClients(loadedClients);
         if (loadedClients.length > 0) setSelectedClientId(loadedClients[0].id);
+        if (appSettings.businessName) setBusinessName(appSettings.businessName);
+        if (appSettings.headerSubtitle) setHeaderSubtitle(appSettings.headerSubtitle);
+        if (appSettings.businessLogoUrl) setBusinessLogo(appSettings.businessLogoUrl);
+        if (appSettings.colourScheme && colourSchemes[appSettings.colourScheme]) setColourScheme(appSettings.colourScheme);
         setSyncStatus("synced");
       } catch (error) {
         console.error("Could not load data from Sheets:", error);
@@ -816,14 +878,46 @@ function InnerApp() {
     setClients((current) => current.map((client) => (client.id === selectedClient.id ? { ...client, [field]: value } : client)));
   }
 
-  function handlePhotoUpload(event) {
+  async function handlePhotoUpload(event) {
     const file = event.target.files?.[0];
-    if (file) setNewPhoto(URL.createObjectURL(file));
+    if (!file) return;
+    try {
+      const compressed = await compressImageFile(file, { maxSize: 1600, quality: 0.75 });
+      setNewPhoto(compressed);
+    } catch (error) {
+      console.error("Photo compression failed:", error);
+      alert("Could not prepare this photo. Please try another image.");
+    }
   }
 
-  function handleLogoUpload(event) {
+  async function handleLogoUpload(event) {
     const file = event.target.files?.[0];
-    if (file) setBusinessLogo(URL.createObjectURL(file));
+    if (!file) return;
+    try {
+      const compressed = await compressImageFile(file, { maxSize: 1000, quality: 0.82 });
+      setBusinessLogo(compressed);
+    } catch (error) {
+      console.error("Logo compression failed:", error);
+      alert("Could not prepare this logo. Please try another image.");
+    }
+  }
+
+  function saveHeaderSettingsAndClose() {
+    saveAppSettings(
+      {
+        businessName,
+        headerSubtitle,
+        colourScheme,
+        businessLogoUrl: isDataImage(businessLogo) ? "" : businessLogo,
+      },
+      isDataImage(businessLogo) ? businessLogo : ""
+    );
+    setIsEditingHeader(false);
+  }
+
+  function chooseColourScheme(key) {
+    setColourScheme(key);
+    saveAppSettings({ colourScheme: key });
   }
 
   function addNote() {
@@ -848,7 +942,8 @@ function InnerApp() {
       noteId,
       clientId: selectedClient.clientId || selectedClient.id,
       text: note.text,
-      photoUrl: newPhoto || "",
+      photoUrl: isDataImage(newPhoto) ? "" : newPhoto || "",
+      photoData: isDataImage(newPhoto) ? newPhoto : "",
       status: "active",
       createdAt: today,
     });
@@ -1175,7 +1270,8 @@ function InnerApp() {
       noteId: editingNoteId,
       clientId: selectedClient.clientId || selectedClient.id,
       text,
-      photoUrl: editingNotePhoto || "",
+      photoUrl: isDataImage(editingNotePhoto) ? "" : editingNotePhoto || "",
+      photoData: isDataImage(editingNotePhoto) ? editingNotePhoto : "",
       status: "active",
       createdAt: today,
     });
@@ -1329,7 +1425,7 @@ function InnerApp() {
               </div>
               <TextInput label="Business name" value={businessName} onChange={setBusinessName} theme={theme} />
               <TextInput label="Header subtitle" value={headerSubtitle} onChange={setHeaderSubtitle} theme={theme} />
-              <Button onClick={() => setIsEditingHeader(false)} className={`w-full rounded-2xl ${theme.accentButton}`}>Done editing header</Button>
+              <Button onClick={saveHeaderSettingsAndClose} className={`w-full rounded-2xl ${theme.accentButton}`}>Done editing header</Button>
             </CardContent>
           </Card>
         )}
@@ -1699,12 +1795,16 @@ function InnerApp() {
                     type="file"
                     accept="image/*"
                     capture="environment"
-                    onChange={(event) => {
+                    onChange={async (event) => {
                       const file = event.target.files?.[0];
                       if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => setEditingNotePhoto(reader.result);
-                      reader.readAsDataURL(file);
+                      try {
+                        const compressed = await compressImageFile(file, { maxSize: 1600, quality: 0.75 });
+                        setEditingNotePhoto(compressed);
+                      } catch (error) {
+                        console.error("Photo compression failed:", error);
+                        alert("Could not prepare this photo. Please try another image.");
+                      }
                     }}
                     className="hidden"
                   />
@@ -1928,7 +2028,7 @@ function InnerApp() {
               <PageTitle eyebrow="Settings" title="Theme" theme={theme} />
               <div className="grid gap-3">
                 {Object.entries(colourSchemes).map(([key, scheme]) => (
-                  <button key={key} onClick={() => setColourScheme(key)} className={`rounded-2xl border p-4 text-left transition ${colourScheme === key ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                  <button key={key} onClick={() => chooseColourScheme(key)} className={`rounded-2xl border p-4 text-left transition ${colourScheme === key ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <div className={`h-10 w-10 rounded-2xl bg-gradient-to-br ${scheme.header}`} />
