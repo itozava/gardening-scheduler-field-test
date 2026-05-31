@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -481,8 +481,51 @@ function getReminderPreview(client) {
   return `Don’t forget: ${note} — ${client.name}`;
 }
 
+const CLIENTS_STORAGE_KEY = "exton_scheduler_clients_v1";
+
+function normaliseClientFromSheets(row, index = 0) {
+  const nickname = String(row?.Nickname || row?.nickname || row?.["Client Name"] || row?.name || "").trim();
+  const invoiceName = String(row?.["Invoice Name"] || row?.invoiceName || nickname || "").trim();
+  const address = String(row?.Address || row?.address || "").trim();
+  const notes = String(row?.["Notes / Access Info"] || row?.Notes || row?.notes || row?.accessInfo || "").trim();
+
+  return {
+    id: Date.now() + index,
+    name: nickname || invoiceName || `Client ${index + 1}`,
+    sheetKey: nickname || invoiceName || `Client ${index + 1}`,
+    invoiceName: invoiceName || nickname || `Client ${index + 1}`,
+    suburb: address ? address.split(",")[0] : "Suburb",
+    address,
+    phone: String(row?.Phone || row?.phone || "").trim(),
+    email: String(row?.Email || row?.email || "").trim(),
+    accessInfo: notes,
+    scheduleDay: "",
+    frequency: "",
+    nextVisit: "",
+    activeNotes: [],
+    activeAlerts: [],
+    completedNotes: [],
+    visitHistory: [],
+    completedDates: [],
+    oneOffJobs: [],
+  };
+}
+
+function getInitialClients() {
+  try {
+    const saved = window.localStorage.getItem(CLIENTS_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (error) {
+    console.warn("Could not load saved clients:", error);
+  }
+  return initialClients;
+}
+
 function InnerApp() {
-  const [clients, setClients] = useState([]);
+  const [clients, setClients] = useState(getInitialClients);
   const [selectedClientId, setSelectedClientId] = useState(1);
   const [activePage, setActivePage] = useState("schedule");
   const [search, setSearch] = useState("");
@@ -515,6 +558,14 @@ function InnerApp() {
   const [quickJob, setQuickJob] = useState({ name: "", suburb: "", address: "", date: isoToDisplayDate(today) });
   const [newClientForm, setNewClientForm] = useState({ name: "", invoiceName: "", suburb: "", address: "", phone: "", email: "", accessInfo: "", frequency: "", scheduleDay: "", oneOffDate: isoToDisplayDate(today) });
   const [oneOffJobDate, setOneOffJobDate] = useState(isoToDisplayDate(today));
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
+    } catch (error) {
+      console.warn("Could not save clients locally:", error);
+    }
+  }, [clients]);
 
   const theme = colourSchemes[colourScheme] || colourSchemes.green;
   const selectedClient = clients.find((client) => client.id === selectedClientId) || clients[0];
@@ -1310,17 +1361,24 @@ function InnerApp() {
                 </div>
 
                 <Button
-                  onClick={() => { setVisitSubmitStatus("idle"); setVisitForm({
-                            date: isoToDisplayDate(selectedVisitDate || getTodayIso()),
-                            hours: "",
-                            employees: "",
-                            materials: "",
-                            notesMaterials: "",
-                          }); setActivePage("visitForm"); }}
-                  className={`shrink-0 rounded-2xl border px-3 py-2 text-xs leading-tight transition-all duration-200 ${visitMarkedToday ? `${theme.accentButton} border-transparent text-white` : `${theme.borderStrong} bg-white ${theme.softText} ${theme.hoverBg}`}`}
+                  onClick={() => {
+                    if (visitMarkedToday) {
+                      alert("This visit has already been submitted. To fix a mistake, edit or delete the matching row in the Jobs sheet.");
+                      return;
+                    }
+                    setVisitSubmitStatus("idle");
+                    setVisitForm({
+                      date: isoToDisplayDate(selectedVisitDate || getTodayIso()),
+                      totalHours: "",
+                      totalMaterials: "",
+                      notesMaterials: "",
+                    });
+                    setActivePage("visitForm");
+                  }}
+                  className={`shrink-0 rounded-2xl border px-3 py-2 text-xs leading-tight transition-all duration-200 ${visitMarkedToday ? `${theme.accentButton} cursor-not-allowed border-transparent text-white` : `${theme.borderStrong} bg-white ${theme.softText} ${theme.hoverBg}`}`}
                 >
                   <CheckCircle2 className="mr-1 h-4 w-4" />
-                  {visitMarkedToday ? "Visit marked done" : "Mark visit done today"}
+                  {visitMarkedToday ? "Visit submitted" : "Mark visit done today"}
                 </Button>
               </div>
 
@@ -1509,9 +1567,18 @@ function InnerApp() {
               {visitFormError && <p className="rounded-2xl bg-red-50 p-3 text-sm font-medium text-red-700 ring-1 ring-red-100">{visitFormError}</p>}
               <Button
                 onClick={async () => {
+                  const visitDate = displayToIsoDate(visitForm.date) || selectedVisitDate || today;
+
+                  if (selectedClient.completedDates?.includes(visitDate)) {
+                    setVisitFormError("This visit has already been submitted. To fix a mistake, edit or delete the matching row in the Jobs sheet.");
+                    setVisitSubmitStatus("error");
+                    return;
+                  }
+
                   setVisitSubmitStatus("sending");
 
                   const visitData = {
+                    action: "saveJob",
                     client: selectedClient.name,
                     date: visitForm.date,
                     totalHours: visitForm.totalHours,
@@ -1547,7 +1614,7 @@ function InnerApp() {
                   : visitSubmitStatus === "sending"
                   ? "Sending..."
                   : visitSubmitStatus === "error"
-                  ? "Try again"
+                  ? "Check visit details"
                   : "Submit visit and mark done"}
               </Button>
               {visitSubmitStatus === "sent" && (
