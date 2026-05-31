@@ -481,34 +481,115 @@ function getReminderPreview(client) {
   return `Don’t forget: ${note} — ${client.name}`;
 }
 
-const CLIENTS_STORAGE_KEY = "exton_scheduler_clients_v1";
+const CLIENTS_STORAGE_KEY = "exton_scheduler_clients_v2";
 
-function normaliseClientFromSheets(row, index = 0) {
-  const nickname = String(row?.Nickname || row?.nickname || row?.["Client Name"] || row?.name || "").trim();
-  const invoiceName = String(row?.["Invoice Name"] || row?.invoiceName || nickname || "").trim();
-  const address = String(row?.Address || row?.address || "").trim();
-  const notes = String(row?.["Notes / Access Info"] || row?.Notes || row?.notes || row?.accessInfo || "").trim();
+function generateRecordId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
 
-  return {
-    id: Date.now() + index,
-    name: nickname || invoiceName || `Client ${index + 1}`,
-    sheetKey: nickname || invoiceName || `Client ${index + 1}`,
-    invoiceName: invoiceName || nickname || `Client ${index + 1}`,
-    suburb: address ? address.split(",")[0] : "Suburb",
-    address,
-    phone: String(row?.Phone || row?.phone || "").trim(),
-    email: String(row?.Email || row?.email || "").trim(),
-    accessInfo: notes,
-    scheduleDay: "",
-    frequency: "",
-    nextVisit: "",
-    activeNotes: [],
-    activeAlerts: [],
-    completedNotes: [],
-    visitHistory: [],
-    completedDates: [],
-    oneOffJobs: [],
-  };
+function postToSheets(payload) {
+  try {
+    const iframeName = "sheets-submit-frame";
+    let iframe = document.querySelector(`iframe[name="${iframeName}"]`);
+    if (!iframe) {
+      iframe = document.createElement("iframe");
+      iframe.name = iframeName;
+      iframe.style.display = "none";
+      document.body.appendChild(iframe);
+    }
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = GOOGLE_SCRIPT_WEBAPP_URL;
+    form.target = iframeName;
+    form.style.display = "none";
+
+    const input = document.createElement("input");
+    input.name = "payload";
+    input.value = JSON.stringify(payload);
+    form.appendChild(input);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+
+    console.log("Submitted to Google Sheets:", payload);
+    return true;
+  } catch (error) {
+    console.error("Sheet submit failed:", error);
+    return false;
+  }
+}
+
+async function fetchSheetsDatabase() {
+  const url = `${GOOGLE_SCRIPT_WEBAPP_URL}?action=getDatabase&ts=${Date.now()}`;
+  const response = await fetch(url, { method: "GET", cache: "no-store" });
+  const data = await response.json();
+  if (data?.status === "error") throw new Error(data.message || "Sheets returned an error");
+  return data;
+}
+
+function buildClientsFromDatabase(data) {
+  const clientsRows = Array.isArray(data?.clients) ? data.clients : [];
+  const recurringRows = Array.isArray(data?.recurringJobs) ? data.recurringJobs : [];
+  const oneOffRows = Array.isArray(data?.oneOffJobs) ? data.oneOffJobs : [];
+  const notesRows = Array.isArray(data?.clientNotes) ? data.clientNotes : [];
+  const alertsRows = Array.isArray(data?.clientAlerts) ? data.clientAlerts : [];
+  const visitsRows = Array.isArray(data?.visitHistory) ? data.visitHistory : [];
+
+  return clientsRows
+    .filter((row) => row.clientId && row.nickname)
+    .map((row, index) => {
+      const clientId = String(row.clientId);
+      const recurring = recurringRows.find((job) => job.clientId === clientId && (job.status || "active") === "active");
+      const activeNotes = notesRows
+        .filter((note) => note.clientId === clientId && (note.status || "active") === "active")
+        .map((note) => ({ id: note.noteId, text: note.text || "", createdAt: note.createdAt || today, photo: note.photoUrl || null }));
+      const completedClientNotes = notesRows
+        .filter((note) => note.clientId === clientId && note.status === "completed")
+        .map((note) => ({ id: note.noteId, text: note.text || "", completedAt: note.completedAt || note.createdAt || today, photo: note.photoUrl || null }));
+      const activeAlerts = alertsRows
+        .filter((alert) => alert.clientId === clientId && (alert.status || "active") === "active")
+        .map((alert) => ({ id: alert.alertId, text: alert.text || "", alertDate: alert.alertDate || today, createdAt: alert.createdAt || today }));
+      const clientVisits = visitsRows
+        .filter((visit) => visit.clientId === clientId)
+        .sort((a, b) => String(b.visitDate || "").localeCompare(String(a.visitDate || "")));
+      const visitDates = clientVisits.map((visit) => displayToIsoDate(visit.visitDate) || visit.visitDate).filter(Boolean);
+      const visitNotes = clientVisits.map((visit) => ({
+        id: visit.visitId,
+        text: `Visit done ${formatDate(displayToIsoDate(visit.visitDate) || visit.visitDate)}`,
+        completedAt: displayToIsoDate(visit.visitDate) || visit.visitDate,
+        type: "visit",
+        photo: null,
+      }));
+      const oneOffJobs = oneOffRows
+        .filter((job) => job.clientId === clientId && (job.status || "active") === "active")
+        .map((job) => ({ id: job.oneOffJobId, date: displayToIsoDate(job.date) || job.date }));
+
+      const address = row.address || "";
+      return {
+        id: clientId,
+        clientId,
+        name: row.nickname || row.invoiceName || `Client ${index + 1}`,
+        sheetKey: row.nickname || row.invoiceName || `Client ${index + 1}`,
+        invoiceName: row.invoiceName || row.nickname || `Client ${index + 1}`,
+        suburb: address ? String(address).split(",")[0] : "Suburb",
+        address,
+        phone: row.phone || "",
+        email: row.email || "",
+        accessInfo: row.notes || "",
+        recurringJobId: recurring?.recurringJobId || "",
+        scheduleDay: recurring?.scheduleDay || "",
+        frequency: recurring?.frequency || "",
+        nextVisit: displayToIsoDate(recurring?.nextVisit || "") || recurring?.nextVisit || "",
+        activeNotes,
+        activeAlerts,
+        completedNotes: [...visitNotes, ...completedClientNotes],
+        visitHistory: visitDates,
+        completedDates: visitDates,
+        oneOffJobs,
+      };
+    });
 }
 
 function getInitialClients() {
@@ -521,7 +602,7 @@ function getInitialClients() {
   } catch (error) {
     console.warn("Could not load saved clients:", error);
   }
-  return initialClients;
+  return [];
 }
 
 function InnerApp() {
@@ -558,6 +639,32 @@ function InnerApp() {
   const [quickJob, setQuickJob] = useState({ name: "", suburb: "", address: "", date: isoToDisplayDate(today) });
   const [newClientForm, setNewClientForm] = useState({ name: "", invoiceName: "", suburb: "", address: "", phone: "", email: "", accessInfo: "", frequency: "", scheduleDay: "", oneOffDate: isoToDisplayDate(today) });
   const [oneOffJobDate, setOneOffJobDate] = useState(isoToDisplayDate(today));
+  const [syncStatus, setSyncStatus] = useState("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSheetsData() {
+      try {
+        setSyncStatus("loading");
+        const database = await fetchSheetsDatabase();
+        if (cancelled) return;
+        const loadedClients = buildClientsFromDatabase(database);
+        setClients(loadedClients);
+        if (loadedClients.length > 0) setSelectedClientId(loadedClients[0].id);
+        setSyncStatus("synced");
+      } catch (error) {
+        console.error("Could not load data from Sheets:", error);
+        if (!cancelled) setSyncStatus("offline-cache");
+      }
+    }
+
+    loadSheetsData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -611,6 +718,7 @@ function InnerApp() {
     if (!selectedClient) return;
 
     const isoDate = displayToIsoDate(oneOffJobDate) || today;
+    const oneOffJobId = generateRecordId("OOJ");
 
     setClients((current) =>
       current.map((client) =>
@@ -620,7 +728,7 @@ function InnerApp() {
               oneOffJobs: [
                 ...(client.oneOffJobs || []),
                 {
-                  id: `oneoff-${Date.now()}`,
+                  id: oneOffJobId,
                   date: isoDate,
                 },
               ],
@@ -628,6 +736,15 @@ function InnerApp() {
           : client
       )
     );
+
+    postToSheets({
+      action: "saveOneOffJob",
+      oneOffJobId,
+      clientId: selectedClient.clientId || selectedClient.id,
+      date: isoToDisplayDate(isoDate),
+      status: "active",
+      createdAt: today,
+    });
 
     setOneOffJobDate(isoToDisplayDate(today));
     setActivePage("schedule");
@@ -644,6 +761,7 @@ function InnerApp() {
           : client
       )
     );
+    postToSheets({ action: "deleteOneOffJob", oneOffJobId: jobId });
   }
 
 
@@ -654,8 +772,11 @@ function InnerApp() {
 
     setClientSubmitStatus("sending");
 
+    const clientId = generateRecordId("CL");
+
     const newClientData = {
-      id: Date.now(),
+      id: clientId,
+      clientId,
       name,
       sheetKey: name,
       invoiceName: newClientForm.invoiceName || name,
@@ -708,22 +829,37 @@ function InnerApp() {
   function addNote() {
     const text = newNote.trim();
     if (!text && !newPhoto) return;
+    const noteId = generateRecordId("NOTE");
+    const note = { id: noteId, text: text || "Photo reminder", createdAt: today, photo: newPhoto };
+
     setClients((current) =>
       current.map((client) =>
         client.id === selectedClient.id
           ? {
               ...client,
-              activeNotes: [...client.activeNotes, { id: Date.now(), text: text || "Photo reminder", createdAt: today, photo: newPhoto }],
+              activeNotes: [...client.activeNotes, note],
             }
           : client
       )
     );
+
+    postToSheets({
+      action: "saveNote",
+      noteId,
+      clientId: selectedClient.clientId || selectedClient.id,
+      text: note.text,
+      photoUrl: newPhoto || "",
+      status: "active",
+      createdAt: today,
+    });
+
     setNewNote("");
     setNewPhoto(null);
   }
 
   function deleteNote(noteId) {
     setClients((current) => current.map((client) => (client.id === selectedClient.id ? { ...client, activeNotes: client.activeNotes.filter((note) => note.id !== noteId) } : client)));
+    postToSheets({ action: "deleteNote", noteId });
   }
 
   function completeNote(noteId) {
@@ -732,10 +868,11 @@ function InnerApp() {
         if (client.id !== selectedClient.id) return client;
         const noteToComplete = client.activeNotes.find((note) => note.id === noteId);
         if (!noteToComplete) return client;
+        postToSheets({ action: "completeNote", noteId });
         return {
           ...client,
           activeNotes: client.activeNotes.filter((note) => note.id !== noteId),
-          completedNotes: [{ id: Date.now(), text: noteToComplete.text, completedAt: today, photo: noteToComplete.photo }, ...client.completedNotes],
+          completedNotes: [{ id: noteToComplete.id, text: noteToComplete.text, completedAt: today, photo: noteToComplete.photo }, ...client.completedNotes],
         };
       })
     );
@@ -747,10 +884,11 @@ function InnerApp() {
         if (client.id !== selectedClient.id) return client;
         const noteToRestore = client.completedNotes.find((note) => note.id === noteId);
         if (!noteToRestore) return client;
+        postToSheets({ action: "restoreNote", noteId });
         return {
           ...client,
           completedNotes: client.completedNotes.filter((note) => note.id !== noteId),
-          activeNotes: [{ id: Date.now(), text: noteToRestore.text, createdAt: today, photo: noteToRestore.photo }, ...client.activeNotes],
+          activeNotes: [{ id: noteToRestore.id, text: noteToRestore.text, createdAt: today, photo: noteToRestore.photo }, ...client.activeNotes],
         };
       })
     );
@@ -793,6 +931,7 @@ function InnerApp() {
   function deleteClient(clientId) {
     const remainingClients = clients.filter((client) => client.id !== clientId);
     setClients(remainingClients);
+    postToSheets({ action: "deleteClient", clientId });
     if (remainingClients.length > 0) setSelectedClientId(remainingClients[0].id);
     setActivePage("schedule");
   }
@@ -810,8 +949,12 @@ function InnerApp() {
 
   function addQuickJob() {
     if (!quickJob.name.trim()) return;
+    const clientId = generateRecordId("CL");
+    const oneOffJobId = generateRecordId("OOJ");
+
     const newClientData = {
-      id: Date.now(),
+      id: clientId,
+      clientId,
       name: `One-off: ${quickJob.name.trim()}`,
       sheetKey: `One-off: ${quickJob.name.trim()}`,
       invoiceName: quickJob.name.trim(),
@@ -828,16 +971,38 @@ function InnerApp() {
       completedNotes: [],
       visitHistory: [],
       completedDates: [],
-      oneOffJobs: [],
+      oneOffJobs: [{ id: oneOffJobId, date: displayToIsoDate(quickJob.date) || today }],
     };
+    postToSheets({
+      action: "saveClient",
+      mode: "create",
+      clientId,
+      nickname: newClientData.name,
+      invoiceName: newClientData.invoiceName,
+      address: newClientData.address,
+      phone: "",
+      email: "",
+      notes: "",
+    });
+    postToSheets({
+      action: "saveOneOffJob",
+      oneOffJobId,
+      clientId,
+      date: quickJob.date,
+      status: "active",
+      createdAt: today,
+    });
     setClients((current) => [...current, newClientData]);
     setQuickJob({ name: "", suburb: "", address: "", date: isoToDisplayDate(today) });
     setActivePage("schedule");
   }
 
   function addExampleClient() {
+    const clientId = generateRecordId("CL");
+
     const newClientData = {
-      id: Date.now(),
+      id: clientId,
+      clientId,
       name: "New Client",
       sheetKey: "New Client",
       invoiceName: "New Client",
@@ -879,12 +1044,14 @@ function InnerApp() {
     const frequency = selectedClient.frequency || "Weekly";
     const scheduleDay = selectedClient.scheduleDay || "Monday";
     const nextVisit = nextDateForWeekday(scheduleDay, today) || today;
+    const recurringJobId = selectedClient.recurringJobId || generateRecordId("RJ");
 
     setClients((current) =>
       current.map((client) =>
         client.id === selectedClient.id
           ? {
               ...client,
+              recurringJobId,
               frequency,
               scheduleDay,
               nextVisit,
@@ -892,6 +1059,17 @@ function InnerApp() {
           : client
       )
     );
+
+    postToSheets({
+      action: "saveRecurringJob",
+      recurringJobId,
+      clientId: selectedClient.clientId || selectedClient.id,
+      frequency,
+      scheduleDay,
+      nextVisit: isoToDisplayDate(nextVisit),
+      status: "active",
+      createdAt: today,
+    });
 
     setActivePage("schedule");
   }
@@ -906,28 +1084,42 @@ function InnerApp() {
         client.id === selectedClient.id
           ? {
               ...client,
+              recurringJobId: "",
               frequency: "One-off / call when needed",
               nextVisit: "",
               scheduleDay: "",
               completedDates: [],
-      oneOffJobs: [],
+              oneOffJobs: [],
             }
           : client
       )
     );
+    if (selectedClient.recurringJobId) {
+      postToSheets({ action: "deleteRecurringJob", recurringJobId: selectedClient.recurringJobId });
+    }
   }
 
   function addAlert() {
     const text = newAlert.trim();
     const alertDate = displayToIsoDate(newAlertDate) || today;
     if (!text) return;
+    const alertId = generateRecordId("ALERT");
     setClients((current) =>
       current.map((client) =>
         client.id === selectedClient.id
-          ? { ...client, activeAlerts: [...(client.activeAlerts || []), { id: Date.now(), text, alertDate, createdAt: today }] }
+          ? { ...client, activeAlerts: [...(client.activeAlerts || []), { id: alertId, text, alertDate, createdAt: today }] }
           : client
       )
     );
+    postToSheets({
+      action: "saveAlert",
+      alertId,
+      clientId: selectedClient.clientId || selectedClient.id,
+      text,
+      alertDate: isoToDisplayDate(alertDate),
+      status: "active",
+      createdAt: today,
+    });
     setNewAlert("");
     setNewAlertDate(isoToDisplayDate(today));
   }
@@ -940,10 +1132,18 @@ function InnerApp() {
           : client
       )
     );
+    postToSheets({ action: "deleteAlert", alertId });
   }
 
   function completeAlert(alertId) {
-    deleteAlert(alertId);
+    setClients((current) =>
+      current.map((client) =>
+        client.id === selectedClient.id
+          ? { ...client, activeAlerts: (client.activeAlerts || []).filter((alert) => alert.id !== alertId) }
+          : client
+      )
+    );
+    postToSheets({ action: "completeAlert", alertId });
   }
 
   function startEditNote(note) {
@@ -969,6 +1169,16 @@ function InnerApp() {
           : client
       )
     );
+
+    postToSheets({
+      action: "updateNote",
+      noteId: editingNoteId,
+      clientId: selectedClient.clientId || selectedClient.id,
+      text,
+      photoUrl: editingNotePhoto || "",
+      status: "active",
+      createdAt: today,
+    });
 
     setEditingNoteId(null);
     setEditingNoteText("");
@@ -1001,6 +1211,16 @@ function InnerApp() {
       )
     );
 
+    postToSheets({
+      action: "updateAlert",
+      alertId: editingAlertId,
+      clientId: selectedClient.clientId || selectedClient.id,
+      text,
+      alertDate: isoToDisplayDate(alertDate),
+      status: "active",
+      createdAt: today,
+    });
+
     setEditingAlertId(null);
     setEditingAlertText("");
     setEditingAlertDate(isoToDisplayDate(today));
@@ -1012,6 +1232,7 @@ function InnerApp() {
     return submitVisitToSheetsFallback({
       action: "saveClient",
       mode,
+      clientId: clientData.clientId || clientData.id || generateRecordId("CL"),
       originalNickname: clientData.sheetKey || clientData.name || "",
       nickname: clientData.name || "",
       invoiceName: clientData.invoiceName || clientData.name || "",
@@ -1052,57 +1273,11 @@ function InnerApp() {
   }
 
   async function submitVisitToSheets(visitData) {
-    try {
-      await fetch(GOOGLE_SCRIPT_WEBAPP_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8",
-        },
-        body: JSON.stringify(visitData),
-      });
-
-      console.log("Visit sent to Google Sheets:", visitData);
-      return true;
-    } catch (error) {
-      console.error("Failed to send visit:", error);
-      alert("Could not send visit to Google Sheets.");
-      return false;
-    }
+    return postToSheets(visitData);
   }
 
   function submitVisitToSheetsFallback(visitData) {
-    try {
-      const iframeName = "sheets-submit-frame";
-      let iframe = document.querySelector(`iframe[name="${iframeName}"]`);
-      if (!iframe) {
-        iframe = document.createElement("iframe");
-        iframe.name = iframeName;
-        iframe.style.display = "none";
-        document.body.appendChild(iframe);
-      }
-
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = GOOGLE_SCRIPT_WEBAPP_URL;
-      form.target = iframeName;
-      form.style.display = "none";
-
-      const input = document.createElement("input");
-      input.name = "payload";
-      input.value = JSON.stringify(visitData);
-      form.appendChild(input);
-
-      document.body.appendChild(form);
-      form.submit();
-      document.body.removeChild(form);
-
-      console.log("Visit submitted through hidden form:", visitData);
-      return true;
-    } catch (error) {
-      console.error("Hidden form submit failed:", error);
-      return false;
-    }
+    return postToSheets(visitData);
   }
 
   function handleMonthTouchEnd(event) {
@@ -1162,6 +1337,17 @@ function InnerApp() {
         {isOfflineMode && (
           <div className="mb-4 rounded-2xl bg-amber-50 p-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">
             Offline mode on — changes will be saved on this phone and synced when internet is back.
+          </div>
+        )}
+
+        {syncStatus === "loading" && (
+          <div className="mb-4 rounded-2xl bg-sky-50 p-3 text-sm font-medium text-sky-900 ring-1 ring-sky-100">
+            Loading latest data from Google Sheets...
+          </div>
+        )}
+        {syncStatus === "offline-cache" && (
+          <div className="mb-4 rounded-2xl bg-amber-50 p-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">
+            Could not reach Google Sheets. Showing saved data on this device.
           </div>
         )}
 
@@ -1577,8 +1763,11 @@ function InnerApp() {
 
                   setVisitSubmitStatus("sending");
 
+                  const visitId = generateRecordId("VISIT");
                   const visitData = {
                     action: "saveJob",
+                    visitId,
+                    clientId: selectedClient.clientId || selectedClient.id,
                     client: selectedClient.name,
                     date: visitForm.date,
                     totalHours: visitForm.totalHours,
