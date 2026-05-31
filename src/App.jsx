@@ -738,6 +738,7 @@ function InnerApp() {
   const [newClientForm, setNewClientForm] = useState({ name: "", invoiceName: "", suburb: "", address: "", phone: "", email: "", accessInfo: "", frequency: "", scheduleDay: "", oneOffDate: isoToDisplayDate(today) });
   const [oneOffJobDate, setOneOffJobDate] = useState(isoToDisplayDate(today));
   const [syncStatus, setSyncStatus] = useState("loading");
+  const [imageViewerUrl, setImageViewerUrl] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1433,6 +1434,26 @@ function InnerApp() {
 
   return (
     <div className={`min-h-screen ${theme.appBg} text-slate-900`}>
+      {imageViewerUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setImageViewerUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setImageViewerUrl(null)}
+            className="absolute right-4 top-4 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-lg"
+          >
+            Close
+          </button>
+          <img
+            src={imageViewerUrl}
+            alt="Full size attachment"
+            className="max-h-[85vh] max-w-full rounded-2xl bg-white object-contain shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
       <div className="mx-auto max-w-md px-4 py-5">
         <header className={`mb-4 rounded-3xl bg-gradient-to-br ${theme.header} ${theme.headerText || "text-white"} p-5 shadow-sm`}>
           <div className="grid grid-cols-[6.5rem_1fr_4.8rem] items-center justify-items-center gap-4">
@@ -1730,7 +1751,7 @@ function InnerApp() {
                 <div className="space-y-2">
                   {selectedClient.activeNotes.length === 0 && <p className="rounded-2xl bg-white p-3 text-sm text-slate-500">Nothing pending for this client.</p>}
                   {selectedClient.activeNotes.map((note) => (
-                    <NoteCard key={note.id} note={note} onEdit={() => startEditNote(note)} onDone={() => completeNote(note.id)} onDelete={() => deleteNote(note.id)} theme={theme} />
+                    <NoteCard key={note.id} note={note} onOpenPhoto={() => setImageViewerUrl(note.photo)} onEdit={() => startEditNote(note)} onDone={() => completeNote(note.id)} onDelete={() => deleteNote(note.id)} theme={theme} />
                   ))}
                 </div>
               </div>
@@ -1987,7 +2008,7 @@ function InnerApp() {
                 {selectedClient.completedNotes.length === 0 && <p className="rounded-2xl border bg-white p-3 text-sm text-slate-500">No completed notes yet.</p>}
                 {selectedClient.completedNotes.map((note) => (
                   <div key={note.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    {note.photo && <img src={note.photo} alt="Completed note attachment" className="mb-3 h-36 w-full rounded-2xl object-cover" />}
+                    {note.photo && <button type="button" onClick={() => setImageViewerUrl(note.photo)} className="mb-3 block w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-left"><img src={note.photo} alt="Completed note attachment" className="h-36 w-full object-cover" /><div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600"><ImageIcon className="h-4 w-4" /> Tap to open photo</div></button>}
                     <p className="whitespace-pre-line text-sm leading-6">{note.text}</p>
                     <div className="mt-3 flex items-center justify-between gap-3">
                       <p className="text-xs text-slate-500">Completed {daysAgo(note.completedAt)} · {formatDate(note.completedAt)}</p>
@@ -2292,14 +2313,14 @@ function HistoryClientButton({ client, theme, onClick }) {
   );
 }
 
-function NoteCard({ note, onEdit, onDone, onDelete, theme }) {
+function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
   return (
     <div className={`rounded-2xl border ${theme.border} bg-white p-3 shadow-sm`}>
       {note.photo && (
-        <div className="mb-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+        <button type="button" onClick={onOpenPhoto} className="mb-3 block w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-left">
           <img src={note.photo} alt="Note attachment" className="h-36 w-full object-cover" />
-          <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600"><ImageIcon className="h-4 w-4" /> Photo attached</div>
-        </div>
+          <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600"><ImageIcon className="h-4 w-4" /> Tap to open photo</div>
+        </button>
       )}
       <p className="whitespace-pre-line text-sm leading-6">{note.text}</p>
       <div className="mt-3 flex items-center justify-between gap-2">
