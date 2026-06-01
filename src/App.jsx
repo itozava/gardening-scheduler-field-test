@@ -566,14 +566,16 @@ function settingsArrayToObject(settingsRows) {
   return result;
 }
 
-function saveAppSettings(settings, logoData = "") {
-  const logoValue = normaliseImageUrl(settings?.businessLogoUrl || settings?.logoUrl || "");
-  const cleanedSettings = {
-    ...settings,
-    businessLogoUrl: logoValue,
-    logoUrl: logoValue,
-  };
+function saveAppSettings(settings = {}, logoData = "") {
+  const cleanedSettings = { ...settings };
+
+  if (Object.prototype.hasOwnProperty.call(cleanedSettings, "businessLogoUrl")) {
+    cleanedSettings.businessLogoUrl = normaliseImageUrl(cleanedSettings.businessLogoUrl || "");
+    cleanedSettings.logoUrl = cleanedSettings.businessLogoUrl;
+  }
+
   saveAppSettingsLocally(cleanedSettings);
+
   postToSheets({
     action: "saveAppSettings",
     settings: cleanedSettings,
@@ -722,8 +724,7 @@ function InnerApp() {
   const initialAppSettings = getInitialAppSettings();
   const [businessName, setBusinessName] = useState(initialAppSettings.businessName || "Your Business Name");
   const [headerSubtitle, setHeaderSubtitle] = useState(initialAppSettings.headerSubtitle || "Weekly Schedule");
-  const initialLogoUrl = normaliseImageUrl(initialAppSettings.businessLogoUrl || initialAppSettings.logoUrl);
-  const [businessLogo, setBusinessLogo] = useState(initialLogoUrl || "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=300&q=80");
+  const [businessLogo, setBusinessLogo] = useState(normaliseImageUrl(initialAppSettings.businessLogoUrl) || "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?auto=format&fit=crop&w=300&q=80");
   const [isEditingHeader, setIsEditingHeader] = useState(false);
   const [colourScheme, setColourScheme] = useState(initialAppSettings.colourScheme || "green");
   const [visitSubmitStatus, setVisitSubmitStatus] = useState("idle");
@@ -757,14 +758,12 @@ function InnerApp() {
         if (loadedClients.length > 0) setSelectedClientId(loadedClients[0].id);
         if (appSettings.businessName) setBusinessName(appSettings.businessName);
         if (appSettings.headerSubtitle) setHeaderSubtitle(appSettings.headerSubtitle);
-        const loadedLogoUrl = normaliseImageUrl(appSettings.businessLogoUrl || appSettings.logoUrl);
-        if (loadedLogoUrl) setBusinessLogo(loadedLogoUrl);
+        if (appSettings.businessLogoUrl) setBusinessLogo(normaliseImageUrl(appSettings.businessLogoUrl));
         if (appSettings.colourScheme && colourSchemes[appSettings.colourScheme]) setColourScheme(appSettings.colourScheme);
         saveAppSettingsLocally({
           businessName: appSettings.businessName || businessName,
           headerSubtitle: appSettings.headerSubtitle || headerSubtitle,
-          businessLogoUrl: loadedLogoUrl || businessLogo,
-          logoUrl: loadedLogoUrl || businessLogo,
+          businessLogoUrl: normaliseImageUrl(appSettings.businessLogoUrl) || businessLogo,
           colourScheme: appSettings.colourScheme || colourScheme,
         });
         setSyncStatus("synced");
@@ -949,19 +948,7 @@ function InnerApp() {
     try {
       const compressed = await compressImageFile(file, { maxSize: 1000, quality: 0.82 });
       setBusinessLogo(compressed);
-
-      // Save immediately as well as when the user taps Done.
-      // This prevents the logo from only existing as a temporary local preview.
-      saveAppSettings(
-        {
-          businessName,
-          headerSubtitle,
-          colourScheme,
-          businessLogoUrl: "",
-          logoUrl: "",
-        },
-        compressed
-      );
+      saveAppSettings({}, compressed);
     } catch (error) {
       console.error("Logo compression failed:", error);
       alert("Could not prepare this logo. Please try another image.");
@@ -969,16 +956,22 @@ function InnerApp() {
   }
 
   function saveHeaderSettingsAndClose() {
-    saveAppSettings(
-      {
-        businessName,
-        headerSubtitle,
-        colourScheme,
-        businessLogoUrl: isDataImage(businessLogo) ? "" : businessLogo,
-        logoUrl: isDataImage(businessLogo) ? "" : businessLogo,
-      },
-      isDataImage(businessLogo) ? businessLogo : ""
-    );
+    const textSettings = {
+      businessName,
+      headerSubtitle,
+      colourScheme,
+    };
+
+    // Save text/theme first, separately from the logo image. This avoids one large
+    // image upload blocking normal header text from reaching AppSettings.
+    saveAppSettings(textSettings);
+
+    if (isDataImage(businessLogo)) {
+      saveAppSettings({}, businessLogo);
+    } else if (businessLogo) {
+      saveAppSettings({ businessLogoUrl: businessLogo });
+    }
+
     setIsEditingHeader(false);
   }
 
