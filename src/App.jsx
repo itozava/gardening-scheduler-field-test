@@ -498,6 +498,31 @@ function normaliseImageUrl(url) {
   return value;
 }
 
+function cleanCurrencyInput(value) {
+  const cleaned = String(value || "")
+    .replace(/[^0-9.]/g, "")
+    .replace(/(\..*)\./g, "$1");
+  const parts = cleaned.split(".");
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]}.${parts[1].slice(0, 2)}`;
+}
+
+function currencyToNumber(value) {
+  const cleaned = cleanCurrencyInput(value);
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function formatCurrencyValue(value) {
+  if (String(value || "").trim() === "") return "";
+  return currencyToNumber(value).toLocaleString("en-AU", {
+    style: "currency",
+    currency: "AUD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function getInitialAppSettings() {
   try {
     const saved = window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
@@ -1925,20 +1950,14 @@ function InnerApp() {
               <PageTitle eyebrow="Visit form" title={selectedClient.name} theme={theme} />
               <DateInput label="Date" value={visitForm.date} onChange={(value) => setVisitForm({ ...visitForm, date: value })} theme={theme} required />
               <TextInput label="Total hours" value={visitForm.totalHours} onChange={(value) => setVisitForm({ ...visitForm, totalHours: value })} theme={theme} required />
-              <TextInput
-  label="Total materials"
-  value={visitForm.totalMaterials}
-  onChange={(value) => {
-    const cleaned = value.replace(/[^0-9.]/g, "");
-    setVisitForm({
-      ...visitForm,
-      totalMaterials: cleaned,
-    });
-  }}
-  theme={theme}
-  required
-  placeholder="$0.00"
-/>
+              <CurrencyInput
+                label="Total materials"
+                value={visitForm.totalMaterials}
+                onChange={(value) => setVisitForm({ ...visitForm, totalMaterials: cleanCurrencyInput(value) })}
+                theme={theme}
+                required
+                placeholder="If none, type 0"
+              />
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">Notes / Materials Used</span>
                 <textarea value={visitForm.notesMaterials} onChange={(event) => setVisitForm({ ...visitForm, notesMaterials: event.target.value })} rows={4} className={`w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 ${theme.focusRing}`} />
@@ -1964,7 +1983,7 @@ function InnerApp() {
                     client: selectedClient.name,
                     date: visitForm.date,
                     totalHours: visitForm.totalHours,
-                    totalMaterials: Number(visitForm.totalMaterials || 0),
+                    totalMaterials: currencyToNumber(visitForm.totalMaterials),
                     notesMaterials: visitForm.notesMaterials,
                   };
 
@@ -2434,6 +2453,27 @@ function TextInput({ label, value, onChange, theme, required = false, placeholde
     <label className="block">
       <span className="mb-1 block text-sm font-medium">{label}{required && <span className="text-red-600"> *</span>}</span>
       <input placeholder={placeholder} value={value} required={required} onChange={(event) => onChange(event.target.value)} className={`w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 ${theme?.focusRing || "focus:ring-slate-300"}`} />
+    </label>
+  );
+}
+
+function CurrencyInput({ label, value, onChange, theme, required = false, placeholder = "" }) {
+  const [isFocused, setIsFocused] = useState(false);
+  const displayValue = isFocused ? value : formatCurrencyValue(value);
+
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-medium">{label}{required && <span className="text-red-600"> *</span>}</span>
+      <input
+        inputMode="decimal"
+        placeholder={placeholder}
+        value={displayValue}
+        required={required}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        onChange={(event) => onChange(event.target.value)}
+        className={`w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 ${theme?.focusRing || "focus:ring-slate-300"}`}
+      />
     </label>
   );
 }
