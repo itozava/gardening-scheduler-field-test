@@ -1925,7 +1925,20 @@ function InnerApp() {
               <PageTitle eyebrow="Visit form" title={selectedClient.name} theme={theme} />
               <DateInput label="Date" value={visitForm.date} onChange={(value) => setVisitForm({ ...visitForm, date: value })} theme={theme} required />
               <TextInput label="Total hours" value={visitForm.totalHours} onChange={(value) => setVisitForm({ ...visitForm, totalHours: value })} theme={theme} required />
-              <TextInput label="Total materials" value={visitForm.totalMaterials} onChange={(value) => setVisitForm({ ...visitForm, totalMaterials: value })} theme={theme} required placeholder="If none, type 0" />
+              <TextInput
+  label="Total materials"
+  value={visitForm.totalMaterials}
+  onChange={(value) => {
+    const cleaned = value.replace(/[^0-9.]/g, "");
+    setVisitForm({
+      ...visitForm,
+      totalMaterials: cleaned,
+    });
+  }}
+  theme={theme}
+  required
+  placeholder="$0.00"
+/>
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">Notes / Materials Used</span>
                 <textarea value={visitForm.notesMaterials} onChange={(event) => setVisitForm({ ...visitForm, notesMaterials: event.target.value })} rows={4} className={`w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 ${theme.focusRing}`} />
@@ -1951,7 +1964,7 @@ function InnerApp() {
                     client: selectedClient.name,
                     date: visitForm.date,
                     totalHours: visitForm.totalHours,
-                    totalMaterials: visitForm.totalMaterials,
+                    totalMaterials: Number(visitForm.totalMaterials || 0),
                     notesMaterials: visitForm.notesMaterials,
                   };
 
