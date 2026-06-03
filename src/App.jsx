@@ -1098,7 +1098,41 @@ function InnerApp() {
   }
 
   function rescheduleClient(clientId, newDay) {
-    setClients((current) => current.map((client) => (client.id === clientId ? { ...client, scheduleDay: newDay } : client)));
+    const clientToMove = clients.find((client) => client.id === clientId);
+    if (!clientToMove) {
+      setDraggedClientId(null);
+      return;
+    }
+
+    const frequency = clientToMove.frequency || "Weekly";
+    const nextVisit = nextDateForWeekday(newDay, today) || today;
+    const recurringJobId = clientToMove.recurringJobId || generateRecordId("RJ");
+
+    setClients((current) =>
+      current.map((client) =>
+        client.id === clientId
+          ? {
+              ...client,
+              recurringJobId,
+              scheduleDay: newDay,
+              frequency,
+              nextVisit,
+            }
+          : client
+      )
+    );
+
+    postToSheets({
+      action: "saveRecurringJob",
+      recurringJobId,
+      clientId: clientToMove.clientId || clientToMove.id,
+      frequency,
+      scheduleDay: newDay,
+      nextVisit: isoToDisplayDate(nextVisit),
+      status: "active",
+      createdAt: today,
+    });
+
     setDraggedClientId(null);
   }
 
@@ -1198,7 +1232,8 @@ function InnerApp() {
 
     const frequency = selectedClient.frequency || "Weekly";
     const scheduleDay = selectedClient.scheduleDay || "Monday";
-    const nextVisit = nextDateForWeekday(scheduleDay, today) || today;
+    const selectedStartDate = selectedClient.nextVisit || nextDateForWeekday(scheduleDay, today) || today;
+    const nextVisit = dateWeekday(selectedStartDate) === scheduleDay ? selectedStartDate : nextDateForWeekday(scheduleDay, selectedStartDate) || selectedStartDate;
     const recurringJobId = selectedClient.recurringJobId || generateRecordId("RJ");
 
     setClients((current) =>
@@ -2062,7 +2097,7 @@ function InnerApp() {
           <Card className={`rounded-3xl ${theme.border} bg-white shadow-sm`}>
             <CardContent className="space-y-4 p-4">
               <PageTitle eyebrow="Settings" title="Jobs / Schedule" subtitle="Manage recurring schedule and extra one-off jobs separately." theme={theme} />
-              <SelectInput label="Select client" value={String(selectedClientId)} onChange={(value) => { setClientEditStatus("idle"); setSelectedClientId(Number(value)); }} options={clients.map((client) => ({ label: client.name, value: String(client.id) }))} />
+              <SelectInput label="Select client" value={String(selectedClientId)} onChange={(value) => { setClientEditStatus("idle"); setSelectedClientId(value); }} options={clients.map((client) => ({ label: client.name, value: String(client.id) }))} />
 
               {!selectedClient.frequency && (
                 <div className="rounded-2xl bg-amber-50 p-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">
@@ -2078,6 +2113,14 @@ function InnerApp() {
                 <p className={`mb-2 text-sm font-semibold ${theme.strongText}`}>Recurring schedule</p>
                 <SelectInput label="Frequency" value={selectedClient.frequency || "Weekly"} onChange={updateSelectedFrequency} options={["Weekly", "Fortnightly", "Every 3 weeks", "Monthly"]} />
                 <SelectInput label="Day" value={selectedClient.scheduleDay || "Monday"} onChange={(value) => updateSelectedClient("scheduleDay", value)} options={weekdays} />
+                <DateInput
+                  label="Start date / next visit"
+                  value={isoToDisplayDate(selectedClient.nextVisit || nextDateForWeekday(selectedClient.scheduleDay || "Monday", today) || today)}
+                  onChange={(value) => updateSelectedClient("nextVisit", displayToIsoDate(value) || selectedClient.nextVisit || today)}
+                  theme={theme}
+                  required
+                />
+                <p className="rounded-xl bg-slate-50 p-2 text-xs text-slate-500">For fortnightly clients, choose the exact week this client starts. Example: Client A this Thursday, Client B next Thursday.</p>
                 <Button onClick={createJobForSelectedClient} className={`mt-3 w-full rounded-2xl ${theme.accentButton}`}>{selectedClient.frequency ? "Update recurring schedule" : "Create recurring schedule"}</Button>
               </div>
 
