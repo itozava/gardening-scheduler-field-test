@@ -1098,41 +1098,7 @@ function InnerApp() {
   }
 
   function rescheduleClient(clientId, newDay) {
-    const clientToMove = clients.find((client) => client.id === clientId);
-    if (!clientToMove) {
-      setDraggedClientId(null);
-      return;
-    }
-
-    const frequency = clientToMove.frequency || "Weekly";
-    const nextVisit = nextDateForWeekday(newDay, today) || today;
-    const recurringJobId = clientToMove.recurringJobId || generateRecordId("RJ");
-
-    setClients((current) =>
-      current.map((client) =>
-        client.id === clientId
-          ? {
-              ...client,
-              recurringJobId,
-              scheduleDay: newDay,
-              frequency,
-              nextVisit,
-            }
-          : client
-      )
-    );
-
-    postToSheets({
-      action: "saveRecurringJob",
-      recurringJobId,
-      clientId: clientToMove.clientId || clientToMove.id,
-      frequency,
-      scheduleDay: newDay,
-      nextVisit: isoToDisplayDate(nextVisit),
-      status: "active",
-      createdAt: today,
-    });
-
+    setClients((current) => current.map((client) => (client.id === clientId ? { ...client, scheduleDay: newDay } : client)));
     setDraggedClientId(null);
   }
 
@@ -1232,8 +1198,7 @@ function InnerApp() {
 
     const frequency = selectedClient.frequency || "Weekly";
     const scheduleDay = selectedClient.scheduleDay || "Monday";
-    const selectedStartDate = selectedClient.nextVisit || nextDateForWeekday(scheduleDay, today) || today;
-    const nextVisit = dateWeekday(selectedStartDate) === scheduleDay ? selectedStartDate : nextDateForWeekday(scheduleDay, selectedStartDate) || selectedStartDate;
+    const nextVisit = nextDateForWeekday(scheduleDay, today) || today;
     const recurringJobId = selectedClient.recurringJobId || generateRecordId("RJ");
 
     setClients((current) =>
@@ -1750,100 +1715,112 @@ function InnerApp() {
         )}
 
         {activePage === "details" && selectedClient && (
-          <Card className={`rounded-3xl ${theme.border} bg-white shadow-sm`}>
-            <CardContent className="space-y-4 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <PageTitle eyebrow="Client tasks" title={selectedClient.name} subtitle={selectedClient.suburb} theme={theme} />
-                </div>
-
-                <Button
-                  onClick={() => {
-                    if (visitMarkedToday) {
-                      alert("This visit has already been submitted. To fix a mistake, edit or delete the matching row in the Jobs sheet.");
-                      return;
-                    }
-                    setVisitSubmitStatus("idle");
-                    setVisitForm({
-                      date: isoToDisplayDate(selectedVisitDate || getTodayIso()),
-                      totalHours: "",
-                      totalMaterials: "",
-                      notesMaterials: "",
-                    });
-                    setActivePage("visitForm");
-                  }}
-                  className={`shrink-0 rounded-2xl border px-3 py-2 text-xs leading-tight transition-all duration-200 ${visitMarkedToday ? `${theme.accentButton} cursor-not-allowed border-transparent text-white` : `${theme.borderStrong} bg-white ${theme.softText} ${theme.hoverBg}`}`}
-                >
-                  <CheckCircle2 className="mr-1 h-4 w-4" />
-                  {visitMarkedToday ? "Visit submitted" : "Mark visit done today"}
-                </Button>
-              </div>
-
-              {selectedClient.accessInfo && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950 shadow-sm">
-                  <span className="font-bold">Access:</span> <span className="whitespace-pre-line">{selectedClient.accessInfo}</span>
-                </div>
-              )}
-
-              <div className={`rounded-2xl border ${theme.border} ${theme.accentBg} p-3`}>
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <div>
-                    <p className={`text-sm font-semibold ${theme.strongText}`}>Client Notes</p>
-                    <p className="text-xs text-slate-500">Long-term property instructions and client requests.</p>
+          <div className="space-y-3">
+            <Card className={`rounded-3xl ${theme.border} bg-white shadow-sm`}>
+              <CardContent className="space-y-4 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <PageTitle eyebrow="Client tasks" title={selectedClient.name} subtitle={selectedClient.address || selectedClient.suburb} theme={theme} />
                   </div>
-                  <Button onClick={() => setActivePage("addNote")} className={`shrink-0 rounded-xl px-3 py-2 text-xs ${theme.accentButton}`}>
-                    <Plus className="mr-1 h-4 w-4" /> Note
+
+                  <Button
+                    onClick={() => {
+                      if (visitMarkedToday) {
+                        alert("This visit has already been submitted. To fix a mistake, edit or delete the matching row in the Jobs sheet.");
+                        return;
+                      }
+                      setVisitSubmitStatus("idle");
+                      setVisitForm({
+                        date: isoToDisplayDate(selectedVisitDate || getTodayIso()),
+                        totalHours: "",
+                        totalMaterials: "",
+                        notesMaterials: "",
+                      });
+                      setActivePage("visitForm");
+                    }}
+                    className={`shrink-0 rounded-2xl border px-3 py-2 text-xs leading-tight transition-all duration-200 ${visitMarkedToday ? `${theme.accentButton} cursor-not-allowed border-transparent text-white` : `${theme.borderStrong} bg-white ${theme.softText} ${theme.hoverBg}`}`}
+                  >
+                    <CheckCircle2 className="mr-1 h-4 w-4" />
+                    {visitMarkedToday ? "Visit submitted" : "Mark visit done"}
                   </Button>
                 </div>
-                <div className="space-y-2">
-                  {selectedClient.activeNotes.length === 0 && <p className="rounded-2xl bg-white p-3 text-sm text-slate-500">Nothing pending for this client.</p>}
+              </CardContent>
+            </Card>
+
+            <Card className={`rounded-3xl border-2 ${theme.borderStrong} bg-white shadow-sm`}>
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className={`text-xs font-bold uppercase tracking-wide ${theme.accentText}`}>Today's jobs</p>
+                    <p className="text-xs text-slate-500">The main tasks to do at this property.</p>
+                  </div>
+                  <Button onClick={() => setActivePage("addNote")} className={`shrink-0 rounded-xl px-3 py-2 text-xs ${theme.accentButton}`}>
+                    <Plus className="mr-1 h-4 w-4" /> Job
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  {selectedClient.activeNotes.length === 0 && (
+                    <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No jobs or notes pending for this client.</p>
+                  )}
                   {selectedClient.activeNotes.map((note) => (
                     <NoteCard key={note.id} note={note} onOpenPhoto={() => setFullscreenPhoto(note.photo)} onEdit={() => startEditNote(note)} onDone={() => completeNote(note.id)} onDelete={() => deleteNote(note.id)} theme={theme} />
                   ))}
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-
-
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 shadow-sm">
-                <div className="mb-2 flex items-start justify-between gap-3">
+            <Card className="rounded-3xl border border-amber-200 bg-amber-50 shadow-sm">
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-amber-950">Job Alerts</p>
-                    <p className="text-xs text-amber-800">Short-term reminders for tools, materials or things to bring.</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-amber-900">Today's reminders</p>
+                    <p className="text-xs text-amber-800">Tools, materials or things to remember.</p>
                   </div>
                   <Button onClick={() => setActivePage("addAlert")} className="shrink-0 rounded-xl bg-amber-600 px-3 py-2 text-xs text-white hover:bg-amber-700">
                     <Plus className="mr-1 h-4 w-4" /> Alert
                   </Button>
                 </div>
-                <div className="space-y-2">
-                  {(selectedClient.activeAlerts || []).length === 0 && <p className="rounded-2xl bg-white/70 p-3 text-sm text-amber-900">No active alerts for this client.</p>}
+                <div className="space-y-3">
+                  {(selectedClient.activeAlerts || []).length === 0 && <p className="rounded-2xl bg-white/70 p-4 text-sm text-amber-900">No active reminders for this client.</p>}
                   {(selectedClient.activeAlerts || []).map((alert) => (
-                    <div key={alert.id} className="rounded-2xl border border-amber-200 bg-white p-3 shadow-sm">
-                      <p className="whitespace-pre-line text-sm leading-6">{alert.text}</p>
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        <div><p className="text-xs text-amber-800">Show on {formatDate(alert.alertDate || selectedClient.nextVisit || today)}</p><p className="text-[11px] text-amber-700">Added {daysAgo(alert.createdAt)}</p></div>
-                        <div className="flex gap-2">
+                    <div key={alert.id} className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+                      <p className="whitespace-pre-line text-lg font-semibold leading-7 text-slate-950">{alert.text}</p>
+                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-amber-800">Show on {formatDate(alert.alertDate || selectedClient.nextVisit || today)}</p>
+                          <p className="text-[11px] text-slate-400">Added {daysAgo(alert.createdAt)}</p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
                           <Button size="sm" variant="outline" onClick={() => startEditAlert(alert)} className="rounded-2xl border-amber-300 text-amber-800 hover:bg-amber-50"><Pencil className="h-4 w-4" /></Button>
                           <Button size="sm" variant="outline" onClick={() => deleteAlert(alert.id)} className="rounded-2xl border-red-200 text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
-                          <Button size="sm" onClick={() => completeAlert(alert.id)} className="rounded-2xl bg-amber-600 text-white hover:bg-amber-700"><CheckCircle2 className="mr-1 h-4 w-4" /> Job Completed</Button>
+                          <Button size="sm" onClick={() => completeAlert(alert.id)} className="rounded-2xl bg-amber-600 text-white hover:bg-amber-700"><CheckCircle2 className="mr-1 h-4 w-4" /> Done</Button>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
+            <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <CardContent className="space-y-3 p-4">
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-100">
+                    <p className="text-sm font-medium text-amber-950">Last visit</p>
+                    <p className="text-lg font-semibold">{selectedClient.visitHistory.length ? daysAgo(selectedClient.visitHistory[0]) : "Never recorded"}</p>
+                    {selectedClient.visitHistory.length > 0 && <p className="text-sm text-slate-500">{formatDate(selectedClient.visitHistory[0])}</p>}
+                  </div>
 
-
-              <div className="rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-100">
-                <p className="text-sm font-medium text-amber-950">Last visit</p>
-                <p className="text-lg font-semibold">{selectedClient.visitHistory.length ? daysAgo(selectedClient.visitHistory[0]) : "Never recorded"}</p>
-                {selectedClient.visitHistory.length > 0 && <p className="text-sm text-slate-500">{formatDate(selectedClient.visitHistory[0])}</p>}
-              </div>
-
-              
-            </CardContent>
-          </Card>
+                  {selectedClient.accessInfo && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 shadow-sm">
+                      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Property info / access</p>
+                      <p className="whitespace-pre-line">{selectedClient.accessInfo}</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {activePage === "addNote" && selectedClient && (
@@ -2097,7 +2074,7 @@ function InnerApp() {
           <Card className={`rounded-3xl ${theme.border} bg-white shadow-sm`}>
             <CardContent className="space-y-4 p-4">
               <PageTitle eyebrow="Settings" title="Jobs / Schedule" subtitle="Manage recurring schedule and extra one-off jobs separately." theme={theme} />
-              <SelectInput label="Select client" value={String(selectedClientId)} onChange={(value) => { setClientEditStatus("idle"); setSelectedClientId(value); }} options={clients.map((client) => ({ label: client.name, value: String(client.id) }))} />
+              <SelectInput label="Select client" value={String(selectedClientId)} onChange={(value) => { setClientEditStatus("idle"); setSelectedClientId(Number(value)); }} options={clients.map((client) => ({ label: client.name, value: String(client.id) }))} />
 
               {!selectedClient.frequency && (
                 <div className="rounded-2xl bg-amber-50 p-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">
@@ -2113,14 +2090,6 @@ function InnerApp() {
                 <p className={`mb-2 text-sm font-semibold ${theme.strongText}`}>Recurring schedule</p>
                 <SelectInput label="Frequency" value={selectedClient.frequency || "Weekly"} onChange={updateSelectedFrequency} options={["Weekly", "Fortnightly", "Every 3 weeks", "Monthly"]} />
                 <SelectInput label="Day" value={selectedClient.scheduleDay || "Monday"} onChange={(value) => updateSelectedClient("scheduleDay", value)} options={weekdays} />
-                <DateInput
-                  label="Start date / next visit"
-                  value={isoToDisplayDate(selectedClient.nextVisit || nextDateForWeekday(selectedClient.scheduleDay || "Monday", today) || today)}
-                  onChange={(value) => updateSelectedClient("nextVisit", displayToIsoDate(value) || selectedClient.nextVisit || today)}
-                  theme={theme}
-                  required
-                />
-                <p className="rounded-xl bg-slate-50 p-2 text-xs text-slate-500">For fortnightly clients, choose the exact week this client starts. Example: Client A this Thursday, Client B next Thursday.</p>
                 <Button onClick={createJobForSelectedClient} className={`mt-3 w-full rounded-2xl ${theme.accentButton}`}>{selectedClient.frequency ? "Update recurring schedule" : "Create recurring schedule"}</Button>
               </div>
 
@@ -2383,20 +2352,20 @@ function HistoryClientButton({ client, theme, onClick }) {
 
 function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
   return (
-    <div className={`rounded-2xl border ${theme.border} bg-white p-3 shadow-sm`}>
+    <div className={`rounded-3xl border-2 ${theme.border} bg-white p-4 shadow-sm`}>
       {note.photo && (
         <button type="button" onClick={onOpenPhoto} className="mb-3 block w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-left">
-          <img src={note.photo} alt="Note attachment" className="h-36 w-full object-cover" />
+          <img src={note.photo} alt="Note attachment" className="h-44 w-full object-cover" />
           <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600"><ImageIcon className="h-4 w-4" /> Tap to open photo</div>
         </button>
       )}
-      <p className="whitespace-pre-line text-sm leading-6">{note.text}</p>
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="text-xs text-slate-500">Added {daysAgo(note.createdAt)}</p>
-        <div className="flex gap-2">
+      <p className="whitespace-pre-line text-xl font-semibold leading-8 text-slate-950">{note.text}</p>
+      <div className="mt-4 flex flex-col gap-3">
+        <p className="text-xs text-slate-400">Added {daysAgo(note.createdAt)}</p>
+        <div className="grid grid-cols-[1fr_1fr_2fr] gap-2">
           <Button size="sm" variant="outline" onClick={onEdit} className={`rounded-2xl ${theme.borderStrong} ${theme.softText} ${theme.hoverBg}`}><Pencil className="h-4 w-4" /></Button>
           <Button size="sm" variant="outline" onClick={onDelete} className="rounded-2xl border-red-200 text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
-          <Button size="sm" onClick={onDone} className={`rounded-2xl ${theme.accentButton}`}><CheckCircle2 className="mr-1 h-4 w-4" /> Job Completed</Button>
+          <Button size="sm" onClick={onDone} className={`rounded-2xl ${theme.accentButton}`}><CheckCircle2 className="mr-1 h-4 w-4" /> Done</Button>
         </div>
       </div>
     </div>
