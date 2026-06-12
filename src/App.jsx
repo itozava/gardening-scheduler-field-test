@@ -1744,6 +1744,13 @@ function InnerApp() {
                     {visitMarkedToday ? "Visit submitted" : "Mark visit done"}
                   </Button>
                 </div>
+
+                {selectedClient.accessInfo && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 shadow-sm">
+                    <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">Property info / access</p>
+                    <p className="whitespace-pre-line leading-5">{selectedClient.accessInfo}</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1758,7 +1765,7 @@ function InnerApp() {
                     <Plus className="mr-1 h-4 w-4" /> Job
                   </Button>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {selectedClient.activeNotes.length === 0 && (
                     <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No jobs or notes pending for this client.</p>
                   )}
@@ -1811,12 +1818,6 @@ function InnerApp() {
                     {selectedClient.visitHistory.length > 0 && <p className="text-sm text-slate-500">{formatDate(selectedClient.visitHistory[0])}</p>}
                   </div>
 
-                  {selectedClient.accessInfo && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 shadow-sm">
-                      <p className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Property info / access</p>
-                      <p className="whitespace-pre-line">{selectedClient.accessInfo}</p>
-                    </div>
-                  )}
                 </div>
               </CardContent>
             </Card>
@@ -2351,21 +2352,58 @@ function HistoryClientButton({ client, theme, onClick }) {
 }
 
 function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
+  const [showOptions, setShowOptions] = useState(false);
+
   return (
-    <div className={`rounded-3xl border-2 ${theme.border} bg-white p-4 shadow-sm`}>
-      {note.photo && (
-        <button type="button" onClick={onOpenPhoto} className="mb-3 block w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 text-left">
-          <img src={note.photo} alt="Note attachment" className="h-44 w-full object-cover" />
-          <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600"><ImageIcon className="h-4 w-4" /> Tap to open photo</div>
+    <div className={`rounded-2xl border ${theme.border} bg-white px-3 py-3 shadow-sm`}>
+      <div className="grid grid-cols-[auto_1fr_auto_auto] items-start gap-2">
+        <button
+          type="button"
+          onClick={onDone}
+          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${theme.borderStrong} bg-white ${theme.softText} ${theme.hoverBg}`}
+          aria-label="Mark task done"
+        >
+          <CheckCircle2 className="h-4 w-4" />
         </button>
-      )}
-      <p className="whitespace-pre-line text-xl font-semibold leading-8 text-slate-950">{note.text}</p>
-      <div className="mt-4 flex flex-col gap-3">
-        <p className="text-xs text-slate-400">Added {daysAgo(note.createdAt)}</p>
-        <div className="grid grid-cols-[1fr_1fr_2fr] gap-2">
-          <Button size="sm" variant="outline" onClick={onEdit} className={`rounded-2xl ${theme.borderStrong} ${theme.softText} ${theme.hoverBg}`}><Pencil className="h-4 w-4" /></Button>
-          <Button size="sm" variant="outline" onClick={onDelete} className="rounded-2xl border-red-200 text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
-          <Button size="sm" onClick={onDone} className={`rounded-2xl ${theme.accentButton}`}><CheckCircle2 className="mr-1 h-4 w-4" /> Done</Button>
+
+        <div className="min-w-0">
+          <div className="flex gap-2">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+            <p className="whitespace-pre-line text-sm font-medium leading-6 text-slate-950">{note.text}</p>
+          </div>
+          <p className="mt-1 pl-3.5 text-[11px] text-slate-400">Added {daysAgo(note.createdAt)}</p>
+          {note.photo && (
+            <button type="button" onClick={onOpenPhoto} className="mt-2 ml-3.5 inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
+              <ImageIcon className="h-3.5 w-3.5" /> Photo
+            </button>
+          )}
+        </div>
+
+        {note.photo && (
+          <button type="button" onClick={onOpenPhoto} className="h-10 w-10 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+            <img src={note.photo} alt="Note attachment" className="h-full w-full object-cover" />
+          </button>
+        )}
+
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowOptions((current) => !current)}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-lg font-bold leading-none text-slate-500 hover:bg-slate-50"
+            aria-label="Task options"
+          >
+            ⋯
+          </button>
+          {showOptions && (
+            <div className="absolute right-0 top-9 z-10 w-32 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+              <button type="button" onClick={() => { setShowOptions(false); onEdit(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
+                <Pencil className="h-4 w-4" /> Edit
+              </button>
+              <button type="button" onClick={() => { setShowOptions(false); onDelete(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">
+                <Trash2 className="h-4 w-4" /> Delete
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
