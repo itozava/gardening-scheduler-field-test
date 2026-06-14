@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -2367,8 +2367,8 @@ function HistoryClientButton({ client, theme, onClick }) {
 
 function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
   return (
-    <div className={`rounded-2xl border ${theme.border} bg-white px-3 py-1.5 shadow-sm`}>
-      <div className="grid grid-cols-[1fr_auto_auto] items-start gap-1.5">
+    <div className={`relative rounded-2xl border ${theme.border} bg-white px-3 py-1.5 pr-11 shadow-sm`}>
+      <div className="grid grid-cols-[1fr_auto] items-start gap-1.5">
         <div className="min-w-0">
           <div className="flex gap-1.5">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
@@ -2382,7 +2382,8 @@ function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
             <img src={note.photo} alt="Note attachment" className="h-full w-full object-cover" />
           </button>
         )}
-
+      </div>
+      <div className="absolute right-2 top-1.5">
         <ItemActionMenu ariaLabel="Task options" onCompleted={onDone} onEdit={onEdit} onDelete={onDelete} />
       </div>
     </div>
@@ -2391,9 +2392,21 @@ function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
 
 function ItemActionMenu({ ariaLabel, onCompleted, onEdit, onDelete }) {
   const [showOptions, setShowOptions] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showOptions) return undefined;
+
+    function handlePointerDown(event) {
+      if (!menuRef.current?.contains(event.target)) setShowOptions(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [showOptions]);
 
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <button
         type="button"
         onClick={() => setShowOptions((current) => !current)}
