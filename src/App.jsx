@@ -708,7 +708,7 @@ function getInitialClients() {
 
 function InnerApp() {
   const [clients, setClients] = useState(getInitialClients);
-  const [selectedClientId, setSelectedClientId] = useState(1);
+  const [selectedClientId, setSelectedClientId] = useState(null);
   const [activePage, setActivePage] = useState("schedule");
   const [search, setSearch] = useState("");
   const [newNote, setNewNote] = useState("");
@@ -755,7 +755,12 @@ function InnerApp() {
         const loadedClients = buildClientsFromDatabase(database);
         const appSettings = settingsArrayToObject(database?.appSettings);
         setClients(loadedClients);
-        if (loadedClients.length > 0) setSelectedClientId(loadedClients[0].id);
+        setSelectedClientId((currentSelectedId) => {
+          const selectedClientStillExists = loadedClients.find(
+            (client) => String(client.id) === String(currentSelectedId)
+          );
+          return selectedClientStillExists?.id ?? loadedClients[0]?.id ?? null;
+        });
         if (appSettings.businessName) setBusinessName(appSettings.businessName);
         if (appSettings.headerSubtitle) setHeaderSubtitle(appSettings.headerSubtitle);
         if (appSettings.businessLogoUrl) setBusinessLogo(normaliseImageUrl(appSettings.businessLogoUrl));
@@ -789,7 +794,7 @@ function InnerApp() {
   }, [clients]);
 
   const theme = colourSchemes[colourScheme] || colourSchemes.green;
-  const selectedClient = clients.find((client) => client.id === selectedClientId) || clients[0];
+  const selectedClient = clients.find((client) => String(client.id) === String(selectedClientId)) || clients[0];
   const visitMarkedToday = Boolean(selectedClient?.completedDates?.includes(selectedVisitDate || today));
   const weekDates = useMemo(() => getWeekDates(), []);
   const monthDays = useMemo(() => getMonthDays(monthOffset), [monthOffset]);
@@ -1488,7 +1493,6 @@ function InnerApp() {
             </button>
 
             <button onClick={() => setIsEditingHeader(!isEditingHeader)} className="min-w-0 justify-self-center rounded-2xl p-1 text-center transition hover:bg-black/5">
-              <p className={`text-sm ${theme.mutedHeaderText}`}>{businessName}</p>
               <p className="text-lg font-semibold tracking-tight leading-tight">{headerSubtitle}</p>
             </button>
 
@@ -1515,7 +1519,6 @@ function InnerApp() {
                   <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
                 </label>
               </div>
-              <TextInput label="Business name" value={businessName} onChange={setBusinessName} theme={theme} />
               <TextInput label="Header subtitle" value={headerSubtitle} onChange={setHeaderSubtitle} theme={theme} />
               <Button onClick={saveHeaderSettingsAndClose} className={`w-full rounded-2xl ${theme.accentButton}`}>Done editing header</Button>
             </CardContent>
@@ -2360,23 +2363,18 @@ function HistoryClientButton({ client, theme, onClick }) {
 
 function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
   return (
-    <div className={`rounded-2xl border ${theme.border} bg-white px-3 py-3 shadow-sm`}>
-      <div className="grid grid-cols-[1fr_auto_auto] items-start gap-2">
+    <div className={`rounded-2xl border ${theme.border} bg-white px-3 py-2 shadow-sm`}>
+      <div className="grid grid-cols-[1fr_auto_auto] items-start gap-1.5">
         <div className="min-w-0">
-          <div className="flex gap-2">
-            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-            <p className="whitespace-pre-line text-sm font-medium leading-6 text-slate-950">{note.text}</p>
+          <div className="flex gap-1.5">
+            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+            <p className="whitespace-pre-line text-sm font-medium leading-5 text-slate-950">{note.text}</p>
           </div>
-          <p className="mt-1 pl-3.5 text-[11px] text-slate-400">Added {daysAgo(note.createdAt)}</p>
-          {note.photo && (
-            <button type="button" onClick={onOpenPhoto} className="mt-2 ml-3.5 inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
-              <ImageIcon className="h-3.5 w-3.5" /> Photo
-            </button>
-          )}
+          <p className="mt-0.5 pl-3 text-[11px] leading-4 text-slate-400">Added {daysAgo(note.createdAt)}</p>
         </div>
 
         {note.photo && (
-          <button type="button" onClick={onOpenPhoto} className="h-10 w-10 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+          <button type="button" onClick={onOpenPhoto} className="h-9 w-9 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
             <img src={note.photo} alt="Note attachment" className="h-full w-full object-cover" />
           </button>
         )}
@@ -2395,13 +2393,13 @@ function ItemActionMenu({ ariaLabel, onCompleted, onEdit, onDelete }) {
       <button
         type="button"
         onClick={() => setShowOptions((current) => !current)}
-        className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-lg font-bold leading-none text-slate-500 hover:bg-slate-50"
+        className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-base font-bold leading-none text-slate-500 hover:bg-slate-50"
         aria-label={ariaLabel}
       >
         ⋯
       </button>
       {showOptions && (
-        <div className="absolute right-0 top-9 z-10 w-36 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+        <div className="absolute right-0 top-8 z-10 w-36 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
           <button type="button" onClick={() => { setShowOptions(false); onCompleted(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
             <CheckCircle2 className="h-4 w-4" /> Completed
           </button>
