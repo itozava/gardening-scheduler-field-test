@@ -942,6 +942,18 @@ function InnerApp() {
     }
   }
 
+  async function handleEditingPhotoUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const compressed = await compressImageFile(file, { maxSize: 1600, quality: 0.75 });
+      setEditingNotePhoto(compressed);
+    } catch (error) {
+      console.error("Photo compression failed:", error);
+      alert("Could not prepare this photo. Please try another image.");
+    }
+  }
+
   async function handleLogoUpload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1797,11 +1809,12 @@ function InnerApp() {
                           <p className="text-xs font-medium text-amber-800">Show on {formatDate(alert.alertDate || selectedClient.nextVisit || today)}</p>
                           <p className="text-[11px] text-slate-400">Added {daysAgo(alert.createdAt)}</p>
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <Button size="sm" variant="outline" onClick={() => startEditAlert(alert)} className="rounded-2xl border-amber-300 text-amber-800 hover:bg-amber-50"><Pencil className="h-4 w-4" /></Button>
-                          <Button size="sm" variant="outline" onClick={() => deleteAlert(alert.id)} className="rounded-2xl border-red-200 text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
-                          <Button size="sm" onClick={() => completeAlert(alert.id)} className="rounded-2xl bg-amber-600 text-white hover:bg-amber-700"><CheckCircle2 className="mr-1 h-4 w-4" /> Done</Button>
-                        </div>
+                        <ItemActionMenu
+                          ariaLabel="Reminder options"
+                          onCompleted={() => completeAlert(alert.id)}
+                          onEdit={() => startEditAlert(alert)}
+                          onDelete={() => deleteAlert(alert.id)}
+                        />
                       </div>
                     </div>
                   ))}
@@ -1839,11 +1852,15 @@ function InnerApp() {
                 )}
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <label className={`flex cursor-pointer items-center justify-center rounded-2xl border ${theme.borderStrong} ${theme.accentBg} p-3 text-sm font-medium ${theme.softText}`}>
-                    <Camera className="mr-2 h-4 w-4" /> Attach photo
+                    <Camera className="mr-2 h-4 w-4" /> Take photo
                     <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" />
                   </label>
-                  <Button onClick={() => { if (newNote.trim() || newPhoto) { addNote(); setActivePage("details"); } }} className={`rounded-2xl ${theme.accentButton}`}><Plus className="mr-2 h-4 w-4" /> ADD</Button>
+                  <label className={`flex cursor-pointer items-center justify-center rounded-2xl border ${theme.borderStrong} ${theme.accentBg} p-3 text-sm font-medium ${theme.softText}`}>
+                    <ImageIcon className="mr-2 h-4 w-4" /> Gallery
+                    <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+                  </label>
                 </div>
+                <Button onClick={() => { if (newNote.trim() || newPhoto) { addNote(); setActivePage("details"); } }} className={`mt-2 w-full rounded-2xl ${theme.accentButton}`}><Plus className="mr-2 h-4 w-4" /> ADD</Button>
               </div>
               <BackButton onClick={() => setActivePage("details")} theme={theme}>Back to tasks</BackButton>
             </CardContent>
@@ -1882,26 +1899,16 @@ function InnerApp() {
                     <button onClick={() => setEditingNotePhoto(null)} className="w-full p-2 text-sm font-medium text-slate-600">Remove photo</button>
                   </div>
                 )}
-                <label className={`mt-3 flex cursor-pointer items-center justify-center rounded-2xl border ${theme.borderStrong} ${theme.accentBg} p-3 text-sm font-medium ${theme.softText}`}>
-                  <Camera className="mr-2 h-4 w-4" /> Attach / change photo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      try {
-                        const compressed = await compressImageFile(file, { maxSize: 1600, quality: 0.75 });
-                        setEditingNotePhoto(compressed);
-                      } catch (error) {
-                        console.error("Photo compression failed:", error);
-                        alert("Could not prepare this photo. Please try another image.");
-                      }
-                    }}
-                    className="hidden"
-                  />
-                </label>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <label className={`flex cursor-pointer items-center justify-center rounded-2xl border ${theme.borderStrong} ${theme.accentBg} p-3 text-sm font-medium ${theme.softText}`}>
+                    <Camera className="mr-2 h-4 w-4" /> Take photo
+                    <input type="file" accept="image/*" capture="environment" onChange={handleEditingPhotoUpload} className="hidden" />
+                  </label>
+                  <label className={`flex cursor-pointer items-center justify-center rounded-2xl border ${theme.borderStrong} ${theme.accentBg} p-3 text-sm font-medium ${theme.softText}`}>
+                    <ImageIcon className="mr-2 h-4 w-4" /> Gallery
+                    <input type="file" accept="image/*" onChange={handleEditingPhotoUpload} className="hidden" />
+                  </label>
+                </div>
 <Button onClick={saveEditedNote} className={`mt-3 w-full rounded-2xl ${theme.accentButton}`}>
                   <CheckCircle2 className="mr-2 h-4 w-4" /> Save note
                 </Button>
@@ -2352,20 +2359,9 @@ function HistoryClientButton({ client, theme, onClick }) {
 }
 
 function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
-  const [showOptions, setShowOptions] = useState(false);
-
   return (
     <div className={`rounded-2xl border ${theme.border} bg-white px-3 py-3 shadow-sm`}>
-      <div className="grid grid-cols-[auto_1fr_auto_auto] items-start gap-2">
-        <button
-          type="button"
-          onClick={onDone}
-          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${theme.borderStrong} bg-white ${theme.softText} ${theme.hoverBg}`}
-          aria-label="Mark task done"
-        >
-          <CheckCircle2 className="h-4 w-4" />
-        </button>
-
+      <div className="grid grid-cols-[1fr_auto_auto] items-start gap-2">
         <div className="min-w-0">
           <div className="flex gap-2">
             <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
@@ -2385,27 +2381,38 @@ function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
           </button>
         )}
 
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowOptions((current) => !current)}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-lg font-bold leading-none text-slate-500 hover:bg-slate-50"
-            aria-label="Task options"
-          >
-            ⋯
-          </button>
-          {showOptions && (
-            <div className="absolute right-0 top-9 z-10 w-32 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
-              <button type="button" onClick={() => { setShowOptions(false); onEdit(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
-                <Pencil className="h-4 w-4" /> Edit
-              </button>
-              <button type="button" onClick={() => { setShowOptions(false); onDelete(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">
-                <Trash2 className="h-4 w-4" /> Delete
-              </button>
-            </div>
-          )}
-        </div>
+        <ItemActionMenu ariaLabel="Task options" onCompleted={onDone} onEdit={onEdit} onDelete={onDelete} />
       </div>
+    </div>
+  );
+}
+
+function ItemActionMenu({ ariaLabel, onCompleted, onEdit, onDelete }) {
+  const [showOptions, setShowOptions] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setShowOptions((current) => !current)}
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-lg font-bold leading-none text-slate-500 hover:bg-slate-50"
+        aria-label={ariaLabel}
+      >
+        ⋯
+      </button>
+      {showOptions && (
+        <div className="absolute right-0 top-9 z-10 w-36 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+          <button type="button" onClick={() => { setShowOptions(false); onCompleted(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
+            <CheckCircle2 className="h-4 w-4" /> Completed
+          </button>
+          <button type="button" onClick={() => { setShowOptions(false); onEdit(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
+            <Pencil className="h-4 w-4" /> Edit
+          </button>
+          <button type="button" onClick={() => { setShowOptions(false); onDelete(); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">
+            <Trash2 className="h-4 w-4" /> Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
