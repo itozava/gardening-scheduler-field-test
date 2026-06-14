@@ -706,6 +706,13 @@ function getInitialClients() {
   return [];
 }
 
+function getSyncedSelectedClientId(loadedClients, currentSelectedId) {
+  const selectedClientStillExists = loadedClients.find(
+    (client) => String(client.id) === String(currentSelectedId)
+  );
+  return selectedClientStillExists?.id ?? loadedClients[0]?.id ?? null;
+}
+
 function InnerApp() {
   const [clients, setClients] = useState(getInitialClients);
   const [selectedClientId, setSelectedClientId] = useState(null);
@@ -755,12 +762,9 @@ function InnerApp() {
         const loadedClients = buildClientsFromDatabase(database);
         const appSettings = settingsArrayToObject(database?.appSettings);
         setClients(loadedClients);
-        setSelectedClientId((currentSelectedId) => {
-          const selectedClientStillExists = loadedClients.find(
-            (client) => String(client.id) === String(currentSelectedId)
-          );
-          return selectedClientStillExists?.id ?? loadedClients[0]?.id ?? null;
-        });
+        setSelectedClientId((currentSelectedId) =>
+          getSyncedSelectedClientId(loadedClients, currentSelectedId)
+        );
         if (appSettings.businessName) setBusinessName(appSettings.businessName);
         if (appSettings.headerSubtitle) setHeaderSubtitle(appSettings.headerSubtitle);
         if (appSettings.businessLogoUrl) setBusinessLogo(normaliseImageUrl(appSettings.businessLogoUrl));
@@ -2363,7 +2367,7 @@ function HistoryClientButton({ client, theme, onClick }) {
 
 function NoteCard({ note, onOpenPhoto, onEdit, onDone, onDelete, theme }) {
   return (
-    <div className={`rounded-2xl border ${theme.border} bg-white px-3 py-2 shadow-sm`}>
+    <div className={`rounded-2xl border ${theme.border} bg-white px-3 py-1.5 shadow-sm`}>
       <div className="grid grid-cols-[1fr_auto_auto] items-start gap-1.5">
         <div className="min-w-0">
           <div className="flex gap-1.5">
