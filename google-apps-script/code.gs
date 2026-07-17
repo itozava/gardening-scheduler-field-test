@@ -3,6 +3,7 @@ function onOpen() {
     .createMenu('Invoicing')
     .addItem('Create invoice + open PDF', 'createInvoiceAndOpenPdf')
     .addItem('Reprint selected invoice', 'reprintSelectedInvoicePdf')
+    .addItem('Set up invoice sheet filter', 'setupInvoicesSheet')
     .addSeparator()
     .addItem('Check database headers', 'setupDatabaseHeaders')
     .addToUi();
@@ -497,7 +498,7 @@ function createInvoiceAndOpenPdf() {
     shJobs.getRange(item.sheetRow, 8, 1, 2).setValues([[invoiceNo, invoiceDate]]); // H:I
   });
 
-  shInv.appendRow([invoiceNo, client, invoiceDate, totalHours, totalMaterialsCharged, subtotal, gstAmount, totalDue]);
+  insertInvoiceAtTop_(shInv, [invoiceNo, client, invoiceDate, totalHours, totalMaterialsCharged, subtotal, gstAmount, totalDue]);
   shTemplate.getRange('D5').setValue(invoiceNo);
   shTemplate.getRange('B2').clearContent();
 
@@ -514,6 +515,42 @@ function createInvoiceAndOpenPdf() {
   shTo.getRange('B1').clearContent();
   shTemplate.showRows(16);
   shTemplate.showRows(17);
+}
+
+function insertInvoiceAtTop_(shInv, invoiceValues) {
+  const hadExistingInvoices = shInv.getLastRow() >= 2;
+  shInv.insertRowAfter(1);
+
+  if (hadExistingInvoices) {
+    shInv.getRange(3, 1, 1, invoiceValues.length).copyTo(
+      shInv.getRange(2, 1, 1, invoiceValues.length),
+      SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
+      false
+    );
+  }
+
+  shInv.getRange(2, 1, 1, invoiceValues.length).setValues([invoiceValues]);
+  ensureInvoicesSheetUsability_(shInv);
+}
+
+function setupInvoicesSheet() {
+  const shInv = SpreadsheetApp.getActive().getSheetByName('Invoices');
+  if (!shInv) {
+    SpreadsheetApp.getUi().alert('Invoices sheet not found.');
+    return;
+  }
+
+  ensureInvoicesSheetUsability_(shInv);
+  SpreadsheetApp.getUi().alert('Invoices header frozen and filter checked.');
+}
+
+function ensureInvoicesSheetUsability_(shInv) {
+  shInv.setFrozenRows(1);
+  if (shInv.getFilter()) return;
+
+  const tableRows = Math.max(shInv.getLastRow(), 2);
+  const tableColumns = Math.max(shInv.getLastColumn(), 8);
+  shInv.getRange(1, 1, tableRows, tableColumns).createFilter();
 }
 
 function setNotesSectionVisibility_(shTemplate) {
