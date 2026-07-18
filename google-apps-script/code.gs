@@ -239,7 +239,7 @@ function saveCompletedVisit_(data) {
 
   const shJobs = getSheet_(SHEETS.JOBS);
   // Jobs layout: A Timestamp, B Client ID, C Client Name, D Date, E Hours, F Materials, G Notes, H Invoice #, I Invoice Date
-  shJobs.appendRow([new Date(), clientId, clientName, date, totalHours, totalMaterials, notesMaterials, '', '']);
+  insertJobAtTop_(shJobs, [new Date(), clientId, clientName, date, totalHours, totalMaterials, notesMaterials, '', '']);
 
   return { status: 'success', type: 'job', visitId, message: 'Visit saved to VisitHistory and Jobs.' };
 }
@@ -453,6 +453,16 @@ function upsertRowById_(sheet, idColumn, id, rowValues) {
   const row = findRowByValue_(sheet, idColumn, id);
   if (row) sheet.getRange(row, 1, 1, rowValues.length).setValues([rowValues]);
   else sheet.appendRow(rowValues);
+}
+
+function insertJobAtTop_(shJobs, rowValues) {
+  shJobs.insertRowBefore(3);
+  shJobs.getRange(4, 1, 1, rowValues.length).copyTo(
+    shJobs.getRange(3, 1, 1, rowValues.length),
+    SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
+    false
+  );
+  shJobs.getRange(3, 1, 1, rowValues.length).setValues([rowValues]);
 }
 
 function deleteById_(sheetName, idCol, id) {
@@ -682,6 +692,7 @@ function reprintSelectedInvoicePdf() {
     return;
   }
   shTemplate.getRange('D5').setValue(invoiceNo);
+  setNotesSectionVisibility_(shTemplate);
   SpreadsheetApp.flush();
   const pdfFile = exportSheetToPdf_(ss, shTemplate, invoiceNo);
   const html = HtmlService.createHtmlOutput(`<script>window.open("${pdfFile.getUrl()}","_blank");google.script.host.close();</script>`);
