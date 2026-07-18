@@ -583,17 +583,20 @@ function createInvoiceAndOpenPdf() {
 
 function insertInvoiceAtTop_(shInv, invoiceValues) {
   const hadExistingInvoices = shInv.getLastRow() >= 2;
+  const invoiceTableColumns = Math.max(invoiceValues.length, 10);
   shInv.insertRowAfter(1);
 
   if (hadExistingInvoices) {
-    shInv.getRange(3, 1, 1, invoiceValues.length).copyTo(
-      shInv.getRange(2, 1, 1, invoiceValues.length),
+    shInv.getRange(3, 1, 1, invoiceTableColumns).copyTo(
+      shInv.getRange(2, 1, 1, invoiceTableColumns),
       SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
       false
     );
   }
 
   shInv.getRange(2, 1, 1, invoiceValues.length).setValues([invoiceValues]);
+  shInv.getRange(2, 9).insertCheckboxes().setValue(false);
+  shInv.getRange(2, 10).clearContent();
   ensureInvoicesSheetUsability_(shInv);
 }
 
