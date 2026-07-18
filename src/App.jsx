@@ -630,13 +630,25 @@ async function fetchSheetsDatabase() {
   return data;
 }
 
+async function fetchClientHistoryFromSheets(clientId) {
+  const url = `${GOOGLE_SCRIPT_WEBAPP_URL}?action=getClientHistory&clientId=${encodeURIComponent(clientId)}&ts=${Date.now()}`;
+  const response = await fetch(url, { method: "GET", cache: "no-store" });
+  const data = await response.json();
+  if (data?.status === "error") throw new Error(data.message || "Sheets returned an error");
+  return data;
+}
+
 function buildClientsFromDatabase(data) {
   const clientsRows = Array.isArray(data?.clients) ? data.clients : [];
   const recurringRows = Array.isArray(data?.recurringJobs) ? data.recurringJobs : [];
   const oneOffRows = Array.isArray(data?.oneOffJobs) ? data.oneOffJobs : [];
   const notesRows = Array.isArray(data?.clientNotes) ? data.clientNotes : [];
   const alertsRows = Array.isArray(data?.clientAlerts) ? data.clientAlerts : [];
-  const visitsRows = Array.isArray(data?.visitHistory) ? data.visitHistory : [];
+  const visitsRows = Array.isArray(data?.latestVisits)
+    ? data.latestVisits
+    : Array.isArray(data?.visitHistory)
+    ? data.visitHistory
+    : [];
 
   return clientsRows
     .filter((row) => row.clientId && row.nickname)
@@ -646,15 +658,12 @@ function buildClientsFromDatabase(data) {
       const activeNotes = notesRows
         .filter((note) => note.clientId === clientId && (note.status || "active") === "active")
         .map((note) => ({ id: note.noteId, text: note.text || "", createdAt: note.createdAt || today, photo: normaliseImageUrl(note.photoUrl) || null }));
-      const completedClientNotes = notesRows
-        .filter((note) => note.clientId === clientId && note.status === "completed")
-        .map((note) => ({ id: note.noteId, text: note.text || "", completedAt: note.completedAt || note.createdAt || today, photo: normaliseImageUrl(note.photoUrl) || null }));
       const activeAlerts = alertsRows
         .filter((alert) => alert.clientId === clientId && (alert.status || "active") === "active")
         .map((alert) => ({ id: alert.alertId, text: alert.text || "", alertDate: alert.alertDate || today, createdAt: alert.createdAt || today }));
       const clientVisits = visitsRows
         .filter((visit) => visit.clientId === clientId)
-        .sort((a, b) => String(b.visitDate || "").localeCompare(String(a.visitDate || "")));
+        .sort((a, b) => String(displayToIsoDate(b.visitDate) || b.visitDate || "").localeCompare(String(displayToIsoDate(a.visitDate) || a.visitDate || "")));
       const visitDates = clientVisits.map((visit) => displayToIsoDate(visit.visitDate) || visit.visitDate).filter(Boolean);
       const visitNotes = clientVisits.map((visit) => ({
         id: visit.visitId,
@@ -685,12 +694,69 @@ function buildClientsFromDatabase(data) {
         nextVisit: displayToIsoDate(recurring?.nextVisit || "") || recurring?.nextVisit || "",
         activeNotes,
         activeAlerts,
-        completedNotes: [...visitNotes, ...completedClientNotes],
+        completedNotes: visitNotes,
         visitHistory: visitDates,
         completedDates: visitDates,
         oneOffJobs,
       };
     });
+}
+
+function buildClientHistoryFromDatabase(data) {
+  const visitsRows = Array.isArray(data?.visitHistory) ? data.visitHistory : [];
+  const notesRows = Array.isArray(data?.clientNotes) ? data.clientNotes : [];
+  const clientVisits = visitsRows.sort((a, b) => String(displayToIsoDate(b.visitDate) || b.visitDate || "").localeCompare(String(displayToIsoDate(a.visitDate) || a.visitDate || "")));
+  const visitDates = clientVisits.map((visit) => displayToIsoDate(visit.visitDate) || visit.visitDate).filter(Boolean);
+  const visitNotes = clientVisits.map((visit) => ({
+    id: visit.visitId,
+    text: `Visit done ${formatDate(displayToIsoDate(visit.visitDate) || visit.visitDate)}`,
+    completedAt: displayToIsoDate(visit.visitDate) || visit.visitDate,
+    type: "visit",
+    photo: null,
+  }));
+  const completedClientNotes = notesRows
+    .filter((note) => note.status === "completed")
+    .map((note) => ({ id: note.noteId, text: note.text || "", completedAt: note.completedAt || note.createdAt || today, photo: normaliseImageUrl(note.photoUrl) || null }));
+
+  return {
+    completedNotes: [...visitNotes, ...completedClientNotes],
+    visitHistory: visitDates,
+    completedDates: visitDates,
+  };
+}
+
+function mergeUniqueByValue(primary = [], fallback = []) {
+  const seen = new Set();
+  return [...primary, ...fallback].filter((value) => {
+    const key = String(value || "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function mergeUniqueNotes(primary = [], fallback = []) {
+  const seen = new Set();
+  return [...primary, ...fallback].filter((note) => {
+    const key = String(note?.id || `${note?.type || "note"}-${note?.completedAt || ""}-${note?.text || ""}`);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function preserveCachedHistory(loadedClients, currentClients) {
+  return loadedClients.map((client) => {
+    const cachedClient = currentClients.find((currentClient) => String(currentClient.id) === String(client.id));
+    if (!cachedClient) return client;
+
+    return {
+      ...client,
+      completedNotes: mergeUniqueNotes(client.completedNotes, cachedClient.completedNotes),
+      visitHistory: mergeUniqueByValue(client.visitHistory, cachedClient.visitHistory),
+      completedDates: mergeUniqueByValue(client.completedDates, cachedClient.completedDates),
+    };
+  });
 }
 
 function getInitialClients() {
@@ -748,20 +814,22 @@ function InnerApp() {
   const [quickJob, setQuickJob] = useState({ name: "", suburb: "", address: "", date: isoToDisplayDate(today) });
   const [newClientForm, setNewClientForm] = useState({ name: "", invoiceName: "", suburb: "", address: "", phone: "", email: "", accessInfo: "", frequency: "", scheduleDay: "", oneOffDate: isoToDisplayDate(today) });
   const [oneOffJobDate, setOneOffJobDate] = useState(isoToDisplayDate(today));
-  const [syncStatus, setSyncStatus] = useState("loading");
+  const [syncStatus, setSyncStatus] = useState("syncing");
   const [fullscreenPhoto, setFullscreenPhoto] = useState(null);
+  const [clientHistoryCache, setClientHistoryCache] = useState({});
+  const [clientHistoryStatus, setClientHistoryStatus] = useState({});
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadSheetsData() {
       try {
-        setSyncStatus("loading");
+        setSyncStatus("syncing");
         const database = await fetchSheetsDatabase();
         if (cancelled) return;
         const loadedClients = buildClientsFromDatabase(database);
         const appSettings = settingsArrayToObject(database?.appSettings);
-        setClients(loadedClients);
+        setClients((currentClients) => preserveCachedHistory(loadedClients, currentClients));
         setSelectedClientId((currentSelectedId) =>
           getSyncedSelectedClientId(loadedClients, currentSelectedId)
         );
@@ -799,6 +867,8 @@ function InnerApp() {
 
   const theme = colourSchemes[colourScheme] || colourSchemes.green;
   const selectedClient = clients.find((client) => String(client.id) === String(selectedClientId)) || clients[0];
+  const selectedClientHistoryKey = selectedClient ? String(selectedClient.clientId || selectedClient.id) : "";
+  const selectedClientHistoryStatus = selectedClientHistoryKey ? clientHistoryStatus[selectedClientHistoryKey] || "idle" : "idle";
   const visitMarkedToday = Boolean(selectedClient?.completedDates?.includes(selectedVisitDate || today));
   const weekDates = useMemo(() => getWeekDates(), []);
   const monthDays = useMemo(() => getMonthDays(monthOffset), [monthOffset]);
@@ -814,6 +884,41 @@ function InnerApp() {
   const selectedMonthDayName = dateWeekday(selectedMonthDate);
   const selectedMonthClients = jobsForDay(selectedMonthDayName, selectedMonthDate);
   const upcomingAlerts = clients.filter((client) => (client.activeAlerts || []).some((alert) => isWithinNext48Hours(alert.alertDate || client.nextVisit)));
+
+  useEffect(() => {
+    if (activePage !== "clientHistory" || !selectedClientHistoryKey) return;
+    if (clientHistoryCache[selectedClientHistoryKey] || clientHistoryStatus[selectedClientHistoryKey] === "loading") return;
+
+    let cancelled = false;
+    setClientHistoryStatus((current) => ({ ...current, [selectedClientHistoryKey]: "loading" }));
+
+    async function loadClientHistory() {
+      try {
+        const historyData = await fetchClientHistoryFromSheets(selectedClientHistoryKey);
+        if (cancelled) return;
+        const history = buildClientHistoryFromDatabase(historyData);
+        setClientHistoryCache((current) => ({ ...current, [selectedClientHistoryKey]: history }));
+        setClients((current) =>
+          current.map((client) =>
+            String(client.clientId || client.id) === selectedClientHistoryKey
+              ? { ...client, ...history }
+              : client
+          )
+        );
+        setClientHistoryStatus((current) => ({ ...current, [selectedClientHistoryKey]: "loaded" }));
+      } catch (error) {
+        console.error("Could not load client history:", error);
+        if (!cancelled) setClientHistoryStatus((current) => ({ ...current, [selectedClientHistoryKey]: "error" }));
+      }
+    }
+
+    loadClientHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePage, selectedClientHistoryKey]);
+
   function jobsForDay(day, date) {
     const recurringJobs = clients
       .filter((client) => shouldShowRecurringJob(client, date))
@@ -1535,14 +1640,14 @@ function InnerApp() {
           </div>
         )}
 
-        {syncStatus === "loading" && (
-          <div className="mb-4 rounded-2xl bg-sky-50 p-3 text-sm font-medium text-sky-900 ring-1 ring-sky-100">
-            Loading latest data from Google Sheets...
+        {syncStatus === "syncing" && (
+          <div className="mb-3 inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-900 ring-1 ring-sky-100">
+            Syncing...
           </div>
         )}
         {syncStatus === "offline-cache" && (
-          <div className="mb-4 rounded-2xl bg-amber-50 p-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">
-            Could not reach Google Sheets. Showing saved data on this device.
+          <div className="mb-3 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 ring-1 ring-amber-100">
+            Offline. Showing saved data.
           </div>
         )}
 
@@ -2050,6 +2155,12 @@ function InnerApp() {
           <Card className={`rounded-3xl ${theme.border} bg-white shadow-sm`}>
             <CardContent className="space-y-4 p-4">
               <PageTitle eyebrow="Completed history" title={selectedClient.name} subtitle={selectedClient.suburb} theme={theme} />
+              {selectedClientHistoryStatus === "loading" && (
+                <p className="rounded-2xl bg-sky-50 p-3 text-sm font-medium text-sky-900 ring-1 ring-sky-100">Loading full history...</p>
+              )}
+              {selectedClientHistoryStatus === "error" && (
+                <p className="rounded-2xl bg-amber-50 p-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">Could not load full history. Showing saved history on this device.</p>
+              )}
               <div className="rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-100">
                 <p className="text-sm font-medium text-amber-950">Last visit</p>
                 <p className="text-lg font-semibold">{selectedClient.visitHistory.length ? daysAgo(selectedClient.visitHistory[0]) : "Never recorded"}</p>

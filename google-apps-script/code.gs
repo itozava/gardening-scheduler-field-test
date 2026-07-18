@@ -36,6 +36,7 @@ function doGet(e) {
     const action = String((e && e.parameter && e.parameter.action) || 'getDatabase').trim();
     if (action === 'getDatabase') return jsonOutput_(getDatabase_());
     if (action === 'getClients') return jsonOutput_(getDatabase_().clients);
+    if (action === 'getClientHistory') return jsonOutput_(getClientHistory_(e.parameter && e.parameter.clientId));
     return jsonOutput_({ status: 'error', message: 'Unknown GET action: ' + action });
   } catch (error) {
     return jsonOutput_({ status: 'error', message: error.message });
@@ -86,16 +87,38 @@ function setupDatabaseHeaders() {
 }
 
 function getDatabase_() {
+  const activeStatus = row => String(row.status || 'active').trim().toLowerCase() === 'active';
+
   return {
     status: 'success',
     generatedAt: new Date().toISOString(),
     clients: readTable_(SHEETS.CLIENTS, ['clientId', 'nickname', 'invoiceName', 'address', 'phone', 'email', 'notes']),
-    recurringJobs: readTable_(SHEETS.RECURRING_JOBS, ['recurringJobId', 'clientId', 'frequency', 'scheduleDay', 'nextVisit', 'status', 'createdAt']),
-    oneOffJobs: readTable_(SHEETS.ONE_OFF_JOBS, ['oneOffJobId', 'clientId', 'date', 'status', 'createdAt']),
-    clientNotes: readTable_(SHEETS.CLIENT_NOTES, ['noteId', 'clientId', 'text', 'photoUrl', 'status', 'createdAt', 'completedAt']),
-    clientAlerts: readTable_(SHEETS.CLIENT_ALERTS, ['alertId', 'clientId', 'text', 'alertDate', 'status', 'createdAt', 'completedAt']),
-    visitHistory: readTable_(SHEETS.VISIT_HISTORY, ['visitId', 'clientId', 'visitDate', 'hours', 'materials', 'notes', 'createdAt']),
+    recurringJobs: readTable_(SHEETS.RECURRING_JOBS, ['recurringJobId', 'clientId', 'frequency', 'scheduleDay', 'nextVisit', 'status', 'createdAt']).filter(activeStatus),
+    oneOffJobs: readTable_(SHEETS.ONE_OFF_JOBS, ['oneOffJobId', 'clientId', 'date', 'status', 'createdAt']).filter(activeStatus),
+    clientNotes: readTable_(SHEETS.CLIENT_NOTES, ['noteId', 'clientId', 'text', 'photoUrl', 'status', 'createdAt', 'completedAt']).filter(activeStatus),
+    clientAlerts: readTable_(SHEETS.CLIENT_ALERTS, ['alertId', 'clientId', 'text', 'alertDate', 'status', 'createdAt', 'completedAt']).filter(activeStatus),
+    latestVisits: getLatestVisitsByClient_(),
     appSettings: readTable_(SHEETS.APP_SETTINGS, ['settingKey', 'settingValue'])
+  };
+}
+
+function getClientHistory_(clientId) {
+  clientId = String(clientId || '').trim();
+  if (!clientId) throw new Error('Client ID is required.');
+
+  const visits = readTable_(SHEETS.VISIT_HISTORY, ['visitId', 'clientId', 'visitDate', 'hours', 'materials', 'notes', 'createdAt'])
+    .filter(row => String(row.clientId || '').trim() === clientId)
+    .sort((a, b) => visitDateSortKey_(b.visitDate) - visitDateSortKey_(a.visitDate));
+
+  const completedNotes = readTable_(SHEETS.CLIENT_NOTES, ['noteId', 'clientId', 'text', 'photoUrl', 'status', 'createdAt', 'completedAt'])
+    .filter(row => String(row.clientId || '').trim() === clientId && String(row.status || '').trim().toLowerCase() === 'completed')
+    .sort((a, b) => visitDateSortKey_(b.completedAt || b.createdAt) - visitDateSortKey_(a.completedAt || a.createdAt));
+
+  return {
+    status: 'success',
+    clientId,
+    visitHistory: visits,
+    clientNotes: completedNotes
   };
 }
 
@@ -351,6 +374,47 @@ function readTable_(sheetName, keys) {
       keys.forEach((key, i) => obj[key] = normaliseValue_(row[i]));
       return obj;
     });
+}
+
+function getLatestVisitsByClient_() {
+  const latestByClient = {};
+  const visits = readTable_(SHEETS.VISIT_HISTORY, ['visitId', 'clientId', 'visitDate', 'hours', 'materials', 'notes', 'createdAt']);
+
+  visits.forEach(visit => {
+    const clientId = String(visit.clientId || '').trim();
+    if (!clientId) return;
+
+    const currentLatest = latestByClient[clientId];
+    if (!currentLatest || visitDateSortKey_(visit.visitDate) > visitDateSortKey_(currentLatest.visitDate)) {
+      latestByClient[clientId] = {
+        visitId: visit.visitId,
+        clientId,
+        visitDate: visit.visitDate
+      };
+    }
+  });
+
+  return Object.keys(latestByClient).map(clientId => latestByClient[clientId]);
+}
+
+function visitDateSortKey_(value) {
+  if (value instanceof Date) return value.getTime();
+
+  const text = String(value || '').trim();
+  if (!text) return 0;
+
+  const isoMatch = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])).getTime();
+  }
+
+  const displayMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (displayMatch) {
+    return new Date(Number(displayMatch[3]), Number(displayMatch[2]) - 1, Number(displayMatch[1])).getTime();
+  }
+
+  const parsed = new Date(text).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function normaliseValue_(value) {
