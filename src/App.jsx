@@ -2252,7 +2252,7 @@ function InnerApp() {
                 <SelectInput label="Frequency" value={selectedClient.frequency || "Weekly"} onChange={updateSelectedFrequency} options={["Weekly", "Fortnightly", "Every 3 weeks", "Monthly"]} />
                 <SelectInput label="Day" value={selectedClient.scheduleDay || "Monday"} onChange={updateSelectedScheduleDay} options={weekdays} />
                 <div className="mt-3">
-                  <TextInput label="Start date / next visit" value={scheduleStartDate} onChange={updateScheduleStartDate} theme={theme} required placeholder="dd/mm/yyyy" />
+                  <DateInput label="Start date / next visit" value={scheduleStartDate} onChange={updateScheduleStartDate} theme={theme} required />
                 </div>
                 {scheduleFormError && (
                   <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-medium text-red-700 ring-1 ring-red-100">{scheduleFormError}</p>
