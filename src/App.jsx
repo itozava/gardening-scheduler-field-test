@@ -419,18 +419,20 @@ function shouldShowRecurringJob(client, date) {
   if (client.scheduleDay !== dateWeekday(date)) return false;
 
   const frequency = client.frequency || "Weekly";
+  const startDate = client.nextVisit || "";
+  const diff = startDate ? daysBetweenIso(startDate, date) : 0;
+  if (startDate && diff < 0) return false;
 
-  // Weekly should always show on the selected weekday.
-  // This avoids jobs disappearing if nextVisit is blank or slightly wrong.
+  // Weekly jobs repeat every selected weekday once the start date has arrived.
+  // Blank nextVisit still falls back to the old behavior for existing data.
   if (frequency === "Weekly") return true;
 
-  const startDate = client.nextVisit || date;
-  const diff = daysBetweenIso(startDate, date);
+  const recurrenceStartDate = startDate || date;
 
   if (frequency === "Fortnightly") return diff % 14 === 0;
   if (frequency === "Every 3 weeks") return diff % 21 === 0;
   if (frequency === "Monthly") {
-    return new Date(`${date}T12:00:00`).getDate() === new Date(`${startDate}T12:00:00`).getDate();
+    return new Date(`${date}T12:00:00`).getDate() === new Date(`${recurrenceStartDate}T12:00:00`).getDate();
   }
 
   return true;
@@ -805,6 +807,8 @@ function InnerApp() {
   const [clientEditStatus, setClientEditStatus] = useState("idle");
   const [visitForm, setVisitForm] = useState({ date: isoToDisplayDate(today), totalHours: "", totalMaterials: "", notesMaterials: "" });
   const [visitFormError, setVisitFormError] = useState("");
+  const [scheduleStartDate, setScheduleStartDate] = useState("");
+  const [scheduleFormError, setScheduleFormError] = useState("");
   const [selectedMonthDate, setSelectedMonthDate] = useState(today);
   const [selectedVisitDate, setSelectedVisitDate] = useState(today);
   const [monthOffset, setMonthOffset] = useState(0);
@@ -884,6 +888,15 @@ function InnerApp() {
   const selectedMonthDayName = dateWeekday(selectedMonthDate);
   const selectedMonthClients = jobsForDay(selectedMonthDayName, selectedMonthDate);
   const upcomingAlerts = clients.filter((client) => (client.activeAlerts || []).some((alert) => isWithinNext48Hours(alert.alertDate || client.nextVisit)));
+
+  useEffect(() => {
+    if (!selectedClient) return;
+    const currentStartDate = selectedClient.nextVisit
+      ? isoToDisplayDate(selectedClient.nextVisit)
+      : isoToDisplayDate(nextDateForWeekday(selectedClient.scheduleDay || "Monday", today));
+    setScheduleStartDate(currentStartDate);
+    setScheduleFormError("");
+  }, [selectedClient?.id, selectedClient?.nextVisit]);
 
   useEffect(() => {
     if (activePage !== "clientHistory" || !selectedClientHistoryKey) return;
@@ -1312,7 +1325,18 @@ function InnerApp() {
   }
 
   function updateSelectedFrequency(value) {
+    setScheduleFormError("");
     updateSelectedClient("frequency", value);
+  }
+
+  function updateSelectedScheduleDay(value) {
+    setScheduleFormError("");
+    updateSelectedClient("scheduleDay", value);
+  }
+
+  function updateScheduleStartDate(value) {
+    setScheduleStartDate(value);
+    setScheduleFormError("");
   }
 
   function updateSelectedOneOffDate(displayDate) {
@@ -1324,8 +1348,19 @@ function InnerApp() {
 
     const frequency = selectedClient.frequency || "Weekly";
     const scheduleDay = selectedClient.scheduleDay || "Monday";
-    const nextVisit = nextDateForWeekday(scheduleDay, today) || today;
+    if (!isValidDisplayDate(scheduleStartDate)) {
+      setScheduleFormError("Enter a real start date in dd/mm/yyyy format.");
+      return;
+    }
+
+    const nextVisit = displayToIsoDate(scheduleStartDate);
+    if (dateWeekday(nextVisit) !== scheduleDay) {
+      setScheduleFormError(`Start date must be a ${scheduleDay}. ${scheduleStartDate} is a ${dateWeekday(nextVisit)}.`);
+      return;
+    }
+
     const recurringJobId = selectedClient.recurringJobId || generateRecordId("RJ");
+    setScheduleFormError("");
 
     setClients((current) =>
       current.map((client) =>
@@ -1347,7 +1382,7 @@ function InnerApp() {
       clientId: selectedClient.clientId || selectedClient.id,
       frequency,
       scheduleDay,
-      nextVisit: isoToDisplayDate(nextVisit),
+      nextVisit: scheduleStartDate,
       status: "active",
       createdAt: today,
     });
@@ -2200,7 +2235,7 @@ function InnerApp() {
           <Card className={`rounded-3xl ${theme.border} bg-white shadow-sm`}>
             <CardContent className="space-y-4 p-4">
               <PageTitle eyebrow="Settings" title="Jobs / Schedule" subtitle="Manage recurring schedule and extra one-off jobs separately." theme={theme} />
-              <SelectInput label="Select client" value={String(selectedClientId)} onChange={(value) => { setClientEditStatus("idle"); setSelectedClientId(Number(value)); }} options={clients.map((client) => ({ label: client.name, value: String(client.id) }))} />
+              <SelectInput label="Select client" value={String(selectedClientId || selectedClient.id)} onChange={(value) => { setClientEditStatus("idle"); setScheduleFormError(""); setSelectedClientId(String(value)); }} options={clients.map((client) => ({ label: client.name, value: String(client.id) }))} />
 
               {!selectedClient.frequency && (
                 <div className="rounded-2xl bg-amber-50 p-3 text-sm font-medium text-amber-900 ring-1 ring-amber-100">
@@ -2215,7 +2250,13 @@ function InnerApp() {
               <div className={`rounded-2xl border ${theme.border} bg-white p-3 shadow-sm`}>
                 <p className={`mb-2 text-sm font-semibold ${theme.strongText}`}>Recurring schedule</p>
                 <SelectInput label="Frequency" value={selectedClient.frequency || "Weekly"} onChange={updateSelectedFrequency} options={["Weekly", "Fortnightly", "Every 3 weeks", "Monthly"]} />
-                <SelectInput label="Day" value={selectedClient.scheduleDay || "Monday"} onChange={(value) => updateSelectedClient("scheduleDay", value)} options={weekdays} />
+                <SelectInput label="Day" value={selectedClient.scheduleDay || "Monday"} onChange={updateSelectedScheduleDay} options={weekdays} />
+                <div className="mt-3">
+                  <TextInput label="Start date / next visit" value={scheduleStartDate} onChange={updateScheduleStartDate} theme={theme} required placeholder="dd/mm/yyyy" />
+                </div>
+                {scheduleFormError && (
+                  <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-medium text-red-700 ring-1 ring-red-100">{scheduleFormError}</p>
+                )}
                 <Button onClick={createJobForSelectedClient} className={`mt-3 w-full rounded-2xl ${theme.accentButton}`}>{selectedClient.frequency ? "Update recurring schedule" : "Create recurring schedule"}</Button>
               </div>
 
