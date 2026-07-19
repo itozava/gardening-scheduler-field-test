@@ -592,21 +592,33 @@ function createInvoiceAndOpenPdf() {
 }
 
 function insertInvoiceAtTop_(shInv, invoiceValues) {
-  const hadExistingInvoices = shInv.getLastRow() >= 2;
+  const hadExistingInvoiceData = shInv.getLastRow() >= 3;
   const invoiceTableColumns = Math.max(invoiceValues.length, 10);
   shInv.insertRowAfter(1);
 
-  if (hadExistingInvoices) {
-    shInv.getRange(3, 1, 1, invoiceTableColumns).copyTo(
-      shInv.getRange(2, 1, 1, invoiceTableColumns),
+  const newRowRange = shInv.getRange(2, 1, 1, invoiceTableColumns);
+  if (hadExistingInvoiceData) {
+    const dataFormatSource = shInv.getRange(4, 1, 1, invoiceTableColumns);
+    dataFormatSource.copyTo(
+      newRowRange,
       SpreadsheetApp.CopyPasteType.PASTE_FORMAT,
       false
     );
+    newRowRange
+      .setNumberFormats(dataFormatSource.getNumberFormats())
+      .setHorizontalAlignments(dataFormatSource.getHorizontalAlignments())
+      .setVerticalAlignments(dataFormatSource.getVerticalAlignments())
+      .setWrapStrategies(dataFormatSource.getWrapStrategies());
   }
 
   shInv.getRange(2, 1, 1, invoiceValues.length).setValues([invoiceValues]);
   shInv.getRange(2, 9).insertCheckboxes().setValue(false);
   shInv.getRange(2, 10).clearContent();
+  shInv.setRowHeight(2, 21);
+  newRowRange
+    .setBackground(null)
+    .setFontColor(null)
+    .setFontWeight('normal');
   ensureInvoicesSheetUsability_(shInv);
 }
 
